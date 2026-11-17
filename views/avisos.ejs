@@ -1,0 +1,73 @@
+<%- include('partials/topo') %>
+<% const rot = { rascunho: 'Rascunho', enviando: 'Enviando', enviado: 'Enviado' }; %>
+<div class="cabeca">
+  <div><h1>Avisos</h1><p class="muted">Cada morador recebe o aviso no privado, com o próprio nome. As mensagens saem aos poucos, das <%= process.env.ENVIO_HORA_INICIO || 8 %>h às <%= process.env.ENVIO_HORA_FIM || 21 %>h, para proteger o número.</p></div>
+</div>
+
+<div class="grade2">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <form class="card campos" method="post" action="/avisos" id="form-aviso">
+      <h2>Novo aviso</h2>
+      <label>Título<input name="titulo" id="titulo" required placeholder="Limpeza da caixa d'água"></label>
+      <label>Texto<textarea name="texto" id="texto" required placeholder="Use {nome} para escrever o nome do morador. Sem {nome}, o sistema começa com &quot;Olá, nome!&quot;."></textarea></label>
+      <label>Para quem
+        <select name="publico" id="publico">
+          <option value="todos">Todos os moradores</option>
+          <% for (const b of blocos) { %><option value="bloco:<%= b %>">Só o bloco <%= b %></option><% } %>
+        </select>
+      </label>
+      <div class="acoes">
+        <button class="btn" type="submit" name="acao" value="enviar" data-c="1">Enviar agora</button>
+        <button class="btn sec" type="submit" name="acao" value="rascunho">Salvar rascunho</button>
+      </div>
+    </form>
+
+    <div class="card">
+      <h2>Histórico</h2>
+      <div class="lista">
+        <% if (!lista.length) { %><p class="small muted">Nenhum aviso ainda.</p><% } %>
+        <% for (const av of lista) { %>
+          <div class="item">
+            <div><b><%= av.titulo %></b> <span class="tag <%= av.status %>"><%= rot[av.status] %></span>
+              <div class="small muted"><%= av.publico === 'todos' ? 'Todos' : 'Bloco ' + av.publico.slice(6) %> · <%= u.dataHora(av.criado_em) %> · <%= av.criado_por || '' %></div>
+              <% if (av.status !== 'rascunho') { %><div class="small"><%= av.enviados %> de <%= av.total %> entregues ao WhatsApp<%= av.erros ? `, ${av.erros} com erro` : '' %></div><% } %>
+            </div>
+            <% if (av.status === 'rascunho') { %>
+              <div class="acoes">
+                <form method="post" action="/avisos/<%= av.id %>/enviar" data-confirmar="Enviar este aviso agora?"><button class="btn peq" type="submit">Enviar</button></form>
+                <form method="post" action="/avisos/<%= av.id %>/excluir"><button class="btn sec peq" type="submit">Excluir</button></form>
+              </div>
+            <% } %>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Escrever com IA</h2>
+    <p class="small muted">Descreva em poucas palavras. A IA escreve o texto e preenche o aviso ao lado para você revisar.</p>
+    <label>O que você quer comunicar<textarea id="ideia" placeholder="Ex.: falta d'água no bloco B amanhã das 9h às 12h por limpeza da caixa"></textarea></label>
+    <label>Tipo<select id="tipo"><option value="aviso">Aviso para moradores</option><option value="notificacao">Notificação formal para uma unidade</option></select></label>
+    <button class="btn sec" type="button" id="btn-ia">Gerar texto</button>
+    <div class="ia" id="notificacao" hidden></div>
+    <p class="small muted">Notificações formais não são enviadas pelo sistema: copie o rascunho, revise e envie pelo canal oficial da administração.</p>
+  </div>
+</div>
+<script>
+document.getElementById('form-aviso').addEventListener('submit', (e) => {
+  if (e.submitter && e.submitter.dataset.c && !confirm('Enviar este aviso agora para os moradores escolhidos?')) e.preventDefault();
+});
+document.getElementById('btn-ia').addEventListener('click', (e) => ocupado(e.target, async () => {
+  const tipo = document.getElementById('tipo').value;
+  const r = await postJSON('/ia/rascunho', { ideia: document.getElementById('ideia').value, tipo });
+  if (tipo === 'aviso') {
+    document.getElementById('titulo').value = r.titulo;
+    document.getElementById('texto').value = r.texto;
+    document.getElementById('notificacao').hidden = true;
+  } else {
+    const el = document.getElementById('notificacao'); el.hidden = false; el.textContent = (r.titulo ? r.titulo + '\n\n' : '') + r.texto;
+  }
+}));
+</script>
+<%- include('partials/rodape') %>

@@ -1,0 +1,44 @@
+<%- include('partials/topo') %>
+<% const perfis = { admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' }; %>
+<div class="cabeca">
+  <div><h1>Equipe e acessos</h1><p class="muted">Quem entra no painel. Cada perfil vê só a sua parte.</p></div>
+</div>
+
+<div class="grade2">
+  <div class="tabela">
+    <table>
+      <thead><tr><th>Nome</th><th>Perfil</th><th>E-mail</th><th>Situação</th><th></th></tr></thead>
+      <tbody>
+        <% for (const x of usuarios) { %>
+          <tr>
+            <td><%= x.nome %></td><td><%= perfis[x.perfil] %></td><td><%= x.email %></td><td><%= x.ativo ? 'Ativo' : 'Bloqueado' %></td>
+            <td><details><summary class="small">Editar</summary>
+              <form class="campos" method="post" action="/equipe" style="margin-top:8px;min-width:220px">
+                <input type="hidden" name="id" value="<%= x.id %>">
+                <input name="nome" value="<%= x.nome %>" required>
+                <input type="email" name="email" value="<%= x.email %>" required>
+                <select name="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= x.perfil === k ? 'selected' : '' %>><%= n %></option><% } %></select>
+                <input name="telefone" value="<%= x.telefone || '' %>" placeholder="WhatsApp (opcional)">
+                <input type="password" name="senha" placeholder="Nova senha (deixe vazio para manter)" autocomplete="new-password">
+                <label class="check"><input type="checkbox" name="ativo" <%= x.ativo ? 'checked' : '' %>> Ativo</label>
+                <button class="btn peq" type="submit">Salvar</button>
+              </form>
+            </details></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <form class="card campos" method="post" action="/equipe">
+    <h2>Novo acesso</h2>
+    <label>Nome<input name="nome" id="nome" required></label>
+    <label>E-mail<input type="email" name="email" id="email" required></label>
+    <label>Perfil<select name="perfil" id="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>"><%= n %></option><% } %></select></label>
+    <label>WhatsApp (opcional)<input name="telefone" id="telefone" inputmode="tel"></label>
+    <label>Senha inicial (mínimo 8)<input type="password" name="senha" id="senha" minlength="8" required autocomplete="new-password"></label>
+    <button class="btn" type="submit">Criar acesso</button>
+    <p class="small muted">Zelador: só chamados, em tela de celular. Portaria: só reclamações, sem ver quem reclamou. Conselho: relatório e radar, só leitura.</p>
+  </form>
+</div>
+<%- include('partials/rodape') %>

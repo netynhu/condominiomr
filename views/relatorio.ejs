@@ -1,0 +1,47 @@
+<%- include('partials/topo') %>
+<% const nomeMes = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(mes + '-15T12:00:00Z'));
+   const fmtH = (h) => h == null ? '-' : h < 48 ? `${h.toFixed(1).replace('.', ',')} h` : `${(h / 24).toFixed(1).replace('.', ',')} dias`;
+   const maxCat = Math.max(1, ...m.porCategoria.map(x => x[1])); const maxTipo = Math.max(1, ...m.porTipo.map(x => x[1])); %>
+<div class="cabeca">
+  <div><h1>Relatório de <%= nomeMes %></h1><p class="muted">Atendimento do assistente e da equipe no mês.</p></div>
+  <form method="get" action="/relatorio" class="acoes"><input type="month" name="mes" id="mes" value="<%= mes %>" style="width:auto"><button class="btn sec" type="submit">Ver</button></form>
+</div>
+
+<div class="numeros">
+  <div class="numero"><b><%= m.mensagens %></b><span>mensagens de moradores atendidas</span></div>
+  <div class="numero"><b><%= m.moradoresAtendidos %></b><span>moradores diferentes atendidos</span></div>
+  <div class="numero"><b><%= m.chamados %></b><span>chamados abertos no mês</span></div>
+  <div class="numero"><b><%= m.resolvidos %></b><span>desses, já resolvidos</span></div>
+  <div class="numero"><b style="font-size:1.4rem;padding:4px 0"><%= fmtH(m.tempoMedio) %></b><span>tempo médio até resolver</span></div>
+  <div class="numero"><b><%= m.reclamacoes %></b><span>reclamações registradas</span></div>
+  <div class="numero"><b><%= m.avisos %></b><span>avisos enviados</span></div>
+  <div class="numero"><b><%= m.abertosAgora %></b><span>chamados em aberto hoje</span></div>
+</div>
+
+<div class="grade">
+  <div class="card">
+    <h2>Chamados por tipo</h2>
+    <% if (!m.porCategoria.length) { %><p class="small muted">Sem chamados no mês.</p><% } %>
+    <% for (const [k, n] of m.porCategoria) { %>
+      <div style="display:grid;grid-template-columns:110px 1fr 32px;gap:10px;align-items:center" class="small">
+        <span><%= k %></span><span style="height:8px;border-radius:4px;background:var(--accent);width:<%= Math.round(n / maxCat * 100) %>%"></span><span class="num" style="text-align:right"><%= n %></span>
+      </div>
+    <% } %>
+  </div>
+  <div class="card">
+    <h2>Reclamações por assunto</h2>
+    <% if (!m.porTipo.length) { %><p class="small muted">Sem reclamações no mês.</p><% } %>
+    <% for (const [k, n] of m.porTipo) { %>
+      <div style="display:grid;grid-template-columns:110px 1fr 32px;gap:10px;align-items:center" class="small">
+        <span><%= k %></span><span style="height:8px;border-radius:4px;background:var(--warn);width:<%= Math.round(n / maxTipo * 100) %>%"></span><span class="num" style="text-align:right"><%= n %></span>
+      </div>
+    <% } %>
+  </div>
+  <div class="card">
+    <h2>Unidades com mais de uma reclamação</h2>
+    <% if (!m.unidadesReincidentes.length) { %><p class="small muted">Nenhuma.</p><% } %>
+    <div class="acoes"><% for (const [k, n] of m.unidadesReincidentes) { %><span class="tag <%= n >= 3 ? 'urgente' : 'alta' %>">Unidade <%= k %>: <%= n %></span><% } %></div>
+    <p class="small muted">Quem reclamou não é identificado neste relatório.</p>
+  </div>
+</div>
+<%- include('partials/rodape') %>

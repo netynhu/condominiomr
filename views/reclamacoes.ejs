@@ -1,0 +1,49 @@
+<%- include('partials/topo') %>
+<% const rot = { nova: 'Nova', em_tratamento: 'Em tratamento', resolvida: 'Resolvida', arquivada: 'Arquivada' }; %>
+<div class="cabeca">
+  <div><h1>Reclamações</h1><p class="muted">Quem reclamou nunca aparece aqui. A página atualiza sozinha a cada 30 segundos.</p></div>
+  <div class="filtros">
+    <% for (const [k, n] of [['abertas','Em aberto'],['resolvida','Resolvidas'],['arquivada','Arquivadas'],['todas','Todas']]) { %>
+      <a href="/reclamacoes?status=<%= k %>" class="<%= filtro === k ? 'ativo' : '' %>"><%= n %></a>
+    <% } %>
+  </div>
+</div>
+
+<% if (reinc.length && usuario.perfil === 'admin') { %>
+<div class="card" style="border-color:var(--warn)">
+  <h2>Unidades com reclamações repetidas (30 dias)</h2>
+  <div class="acoes">
+    <% for (const [unid, n] of reinc) { %><span class="tag <%= n >= 3 ? 'urgente' : 'alta' %>">Unidade <%= unid %>: <%= n %></span><% } %>
+  </div>
+  <p class="small muted">A partir de 3 reclamações o síndico recebe alerta no WhatsApp. Para uma notificação formal, use o rascunho com IA na página de avisos.</p>
+</div>
+<% } %>
+
+<% if (!lista.length) { %><div class="card"><p class="muted">Nenhuma reclamação aqui.</p></div><% } %>
+<div class="chamados">
+  <% for (const r of lista) { %>
+    <div class="chamado <%= r.acontecendo_agora && r.status === 'nova' ? 'urgente' : (r.status === 'nova' ? 'alta' : 'baixa') %>">
+      <div class="topo-c"><span class="small muted">nº <%= r.id %> · <%= u.dataHora(r.criado_em) %></span><span class="tag <%= r.status %>"><%= rot[r.status] %></span></div>
+      <b><%= r.tipo %><%= r.unidade_alvo ? ` · unidade ${r.unidade_alvo}` : '' %></b>
+      <% if (r.acontecendo_agora && r.status === 'nova') { %><span class="tag urgente">acontecendo agora</span><% } %>
+      <span style="white-space:pre-wrap"><%= r.descricao %></span>
+      <% if (r.unidade_alvo && contagem[chave(r.unidade_alvo)] > 1) { %><span class="small muted"><%= contagem[chave(r.unidade_alvo)] %> reclamações contra esta unidade em 30 dias</span><% } %>
+      <% if (r.tratativa) { %><span class="small">Tratativa: <%= r.tratativa %> (<%= r.tratada_por %>)</span><% } %>
+      <% if (r.status === 'nova' || r.status === 'em_tratamento') { %>
+        <form class="campos" method="post" action="/reclamacoes/<%= r.id %>" style="margin-top:6px">
+          <input name="tratativa" id="tratativa-<%= r.id %>" placeholder="O que foi feito" value="<%= r.tratativa || '' %>">
+          <div class="acoes">
+            <% if (r.status === 'nova') { %><button class="btn sec peq" name="status" value="em_tratamento" type="submit">Em tratamento</button><% } %>
+            <button class="btn peq" name="status" value="resolvida" type="submit">Resolvida</button>
+            <button class="btn sec peq" name="status" value="arquivada" type="submit">Arquivar</button>
+          </div>
+        </form>
+      <% } %>
+    </div>
+  <% } %>
+</div>
+<script>
+// Atualiza a lista para a portaria ver reclamações novas sem recarregar à mão (não recarrega enquanto alguém digita)
+setInterval(() => { const a = document.activeElement; if (!a || !['INPUT','TEXTAREA'].includes(a.tagName)) location.reload(); }, 30000);
+</script>
+<%- include('partials/rodape') %>

@@ -1,0 +1,34 @@
+<%- include('partials/topo') %>
+<% const e = editar || {}; %>
+<div class="cabeca">
+  <div><h1>Documentos do prédio</h1><p class="muted">O assistente responde às dúvidas dos moradores só com base nestes textos. Cole o regimento interno, a convenção, regras de mudança, horários, contatos úteis e decisões de assembleia.</p></div>
+</div>
+
+<div class="grade2">
+  <form class="card campos" method="post" action="/documentos">
+    <h2><%= editar ? 'Editar documento' : 'Novo documento' %></h2>
+    <input type="hidden" name="id" value="<%= e.id || '' %>">
+    <label>Título<input name="titulo" id="titulo" value="<%= e.titulo || '' %>" required placeholder="Regimento interno"></label>
+    <label>Conteúdo (texto completo)<textarea name="conteudo" id="conteudo" style="min-height:360px" required><%= e.conteudo || '' %></textarea></label>
+    <% if (editar) { %><label class="check"><input type="checkbox" name="ativo" id="ativo" <%= e.ativo ? 'checked' : '' %>> Em uso pelo assistente</label><% } %>
+    <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/documentos">Cancelar</a><% } %></div>
+    <p class="small muted">Dica: para PDF, abra o arquivo, selecione tudo, copie e cole aqui. Mantenha a numeração dos artigos para o assistente poder citá-los.</p>
+  </form>
+
+  <div class="card">
+    <h2>Cadastrados</h2>
+    <div class="lista">
+      <% if (!docs.length) { %><p class="small muted">Nenhum documento. Sem eles o assistente encaminha toda dúvida de regra para a administração.</p><% } %>
+      <% for (const d of docs) { %>
+        <div class="item">
+          <div><b><%= d.titulo %></b> <% if (!d.ativo) { %><span class="tag">fora de uso</span><% } %><div class="small muted"><%= d.conteudo.length.toLocaleString('pt-BR') %> caracteres · <%= u.data(d.criado_em) %></div></div>
+          <div class="acoes">
+            <a class="btn sec peq" href="/documentos?editar=<%= d.id %>">Editar</a>
+            <form method="post" action="/documentos/<%= d.id %>/excluir" data-confirmar="Excluir este documento?"><button class="btn sec peq" type="submit">Excluir</button></form>
+          </div>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<%- include('partials/rodape') %>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= titulo %> · <%= cfg.nome_predio %></title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/estilo.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<% if (usuario) {
+  const menus = {
+    admin: [['/', 'Início'], ['/whatsapp', 'WhatsApp'], ['/moradores', 'Moradores'], ['/chamados', 'Chamados'], ['/reclamacoes', 'Reclamações'], ['/avisos', 'Avisos'], ['/agenda', 'Agenda'], ['/manutencoes', 'Manutenção'], ['/documentos', 'Documentos'], ['/radar', 'Radar do grupo'], ['/relatorio', 'Relatório'], ['/equipe', 'Equipe'], ['/configuracoes', 'Configurações']],
+    zelador: [['/chamados', 'Chamados']],
+    portaria: [['/reclamacoes', 'Reclamações']],
+    conselho: [['/relatorio', 'Relatório'], ['/radar', 'Radar do grupo']],
+  };
+  const perfis = { admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' };
+%>
+<header class="topo"><div class="linha">
+  <div class="marca"><%= cfg.nome_predio %><small>Assistente do condomínio</small></div>
+  <nav class="nav">
+    <% for (const [href, nome] of menus[usuario.perfil] || []) { %>
+      <a href="<%= href %>" class="<%= (href === '/' ? caminho === '/' : caminho.startsWith(href)) ? 'ativo' : '' %>"><%= nome %></a>
+    <% } %>
+  </nav>
+  <div class="quem"><span><%= usuario.nome %> · <%= perfis[usuario.perfil] %></span>
+    <form method="post" action="/sair" class="inline"><button type="submit">Sair</button></form>
+  </div>
+</div></header>
+<% } %>
+<main>
+<% if (usuario && usuario.perfil === 'admin' && faltando.length) { %>
+  <div class="alerta">Configuração incompleta no servidor. Faltam as variáveis: <code><%= faltando.join(', ') %></code>. O assistente e as rotinas automáticas só funcionam depois disso.</div>
+<% } %>
+<% if (aviso) { %><div class="flash <%= aviso.tipo === 'erro' ? 'erro' : '' %>"><%= aviso.texto %></div><% } %>

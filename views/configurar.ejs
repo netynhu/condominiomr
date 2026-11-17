@@ -1,0 +1,13 @@
+<%- include('partials/topo') %>
+<div class="entrar">
+  <form class="card campos" method="post" action="/configurar">
+    <div><h1>Primeiro acesso</h1><p class="muted">Crie o acesso do administrador. Esta tela só aparece enquanto não existe nenhum usuário.</p></div>
+    <% if (erro) { %><div class="flash erro"><%= erro %></div><% } %>
+    <label>Nome do prédio<input name="nome_predio" id="nome_predio" required placeholder="Edifício Jardim das Flores"></label>
+    <label>Seu nome<input name="nome" id="nome" required></label>
+    <label>E-mail<input type="email" name="email" id="email" required></label>
+    <label>Senha (mínimo 8 caracteres)<input type="password" name="senha" id="senha" minlength="8" required autocomplete="new-password"></label>
+    <button class="btn" type="submit">Criar e entrar</button>
+  </form>
+</div>
+<%- include('partials/rodape') %>

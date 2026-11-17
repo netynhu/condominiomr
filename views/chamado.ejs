@@ -1,0 +1,56 @@
+<%- include('partials/topo') %>
+<% const rot = { aberto: 'Aberto', em_andamento: 'Em andamento', resolvido: 'Resolvido', cancelado: 'Cancelado' }; %>
+<div class="cabeca">
+  <div><h1>Chamado nº <%= c.id %></h1><p class="muted">Aberto em <%= u.dataHora(c.criado_em) %></p></div>
+  <a class="btn sec" href="/chamados">Voltar</a>
+</div>
+
+<div class="grade2">
+  <div class="card">
+    <div class="acoes"><span class="tag <%= c.status %>"><%= rot[c.status] %></span><span class="tag <%= c.prioridade %>"><%= c.prioridade %></span><span class="tag"><%= c.categoria %></span></div>
+    <h2><%= c.titulo %></h2>
+    <% if (c.local) { %><p><b>Local:</b> <%= c.local %></p><% } %>
+    <% if (c.descricao) { %><p style="white-space:pre-wrap"><%= c.descricao %></p><% } %>
+    <p class="muted small">
+      <% if (c.morador) { %>Aberto por <%= c.morador.nome %> · <%= u.rotuloUnidade(c.morador.unidade) %>
+        <% if (usuario.perfil === 'admin') { %> · <a href="/moradores/<%= c.morador.id %>">ver ficha</a><% } %>
+      <% } else { %>Aberto pela <%= c.origem === 'manutencao_preventiva' ? 'rotina de manutenção preventiva' : 'administração' %><% } %>
+    </p>
+    <% if (c.observacao_equipe) { %><div class="ia">Observação da equipe: <%= c.observacao_equipe %></div><% } %>
+
+    <h3>Histórico</h3>
+    <div class="lista">
+      <% for (const h of historico) { %><div class="item"><div><%= h.acao %><div class="small muted"><%= h.usuario_nome %> · <%= u.dataHora(h.criado_em) %></div></div></div><% } %>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <form class="card campos" method="post" action="/chamados/<%= c.id %>/status">
+      <h2>Atualizar</h2>
+      <label>Observação para o morador (opcional)<textarea name="observacao" id="observacao" placeholder="Ex.: lâmpada trocada, aguardando peça do fornecedor"></textarea></label>
+      <div class="acoes">
+        <% if (c.status === 'aberto') { %><button class="btn sec" name="status" value="em_andamento" type="submit">Em andamento</button><% } %>
+        <% if (c.status !== 'resolvido' && c.status !== 'cancelado') { %>
+          <button class="btn" name="status" value="resolvido" type="submit">Resolvido</button>
+        <% } else { %>
+          <button class="btn sec" name="status" value="aberto" type="submit">Reabrir</button>
+        <% } %>
+        <% if (usuario.perfil === 'admin' && c.status !== 'cancelado' && c.status !== 'resolvido') { %><button class="btn perigo" name="status" value="cancelado" type="submit">Cancelar</button><% } %>
+      </div>
+      <% if (c.morador) { %><p class="small muted">Ao marcar em andamento, resolvido ou cancelado, o morador recebe uma mensagem no WhatsApp com a observação.</p><% } %>
+    </form>
+
+    <% if (usuario.perfil === 'admin') { %>
+    <form class="card campos" method="post" action="/chamados/<%= c.id %>/prioridade">
+      <h2>Prioridade</h2>
+      <div class="acoes">
+        <select name="prioridade" id="prioridade" style="width:auto">
+          <% for (const p of ['baixa','normal','alta','urgente']) { %><option value="<%= p %>" <%= c.prioridade === p ? 'selected' : '' %>><%= p %></option><% } %>
+        </select>
+        <button class="btn sec" type="submit">Alterar</button>
+      </div>
+    </form>
+    <% } %>
+  </div>
+</div>
+<%- include('partials/rodape') %>

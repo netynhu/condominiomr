@@ -1,0 +1,26 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Configurações</h1><p class="muted">Dados do prédio e para quem o assistente manda alertas.</p></div>
+</div>
+
+<form class="card campos" method="post" action="/configuracoes" style="max-width:760px">
+  <h2>Prédio</h2>
+  <div class="linha-campos">
+    <label>Nome do prédio<input name="nome_predio" id="nome_predio" value="<%= c.nome_predio %>" required></label>
+    <label>Nome do assistente<input name="nome_assistente" id="nome_assistente" value="<%= c.nome_assistente %>" required></label>
+  </div>
+  <label>Horário de atendimento da administração<input name="horario_administracao" id="horario_administracao" value="<%= c.horario_administracao %>"></label>
+
+  <h2 style="margin-top:8px">Quem recebe alertas no WhatsApp</h2>
+  <div class="linha-campos">
+    <label>Síndico<input name="telefone_sindico" id="telefone_sindico" value="<%= c.telefone_sindico ? u.formatarTelefone(c.telefone_sindico) : '' %>" inputmode="tel"></label>
+    <label>Zelador<input name="telefone_zelador" id="telefone_zelador" value="<%= c.telefone_zelador ? u.formatarTelefone(c.telefone_zelador) : '' %>" inputmode="tel"></label>
+    <label>Portaria<input name="telefone_portaria" id="telefone_portaria" value="<%= c.telefone_portaria ? u.formatarTelefone(c.telefone_portaria) : '' %>" inputmode="tel"></label>
+  </div>
+  <p class="small muted">Síndico: urgências, reincidência de reclamações, manutenção preventiva e assuntos encaminhados. Zelador: chamados novos. Portaria: reclamações novas, sem o nome de quem reclamou.</p>
+
+  <h2 style="margin-top:8px">Instruções extras para o assistente</h2>
+  <label>Regras da casa que o assistente deve seguir<textarea name="instrucoes_extras" id="instrucoes_extras" placeholder="Ex.: Encomendas ficam na portaria até 7 dias. Para reservar o salão, encaminhe à administração."><%= c.instrucoes_extras %></textarea></label>
+  <div class="acoes"><button class="btn" type="submit">Salvar</button></div>
+</form>
+<%- include('partials/rodape') %>

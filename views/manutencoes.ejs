@@ -1,0 +1,42 @@
+<%- include('partials/topo') %>
+<% const e = editar || {}; const hoje = u.agoraBR().dataISO; %>
+<div class="cabeca">
+  <div><h1>Manutenção preventiva</h1><p class="muted">Quando o prazo se aproxima, o sistema abre um chamado e avisa o síndico no WhatsApp.</p></div>
+</div>
+
+<div class="grade2">
+  <div class="tabela">
+    <table>
+      <thead><tr><th>Item</th><th>Próxima</th><th>A cada</th><th></th></tr></thead>
+      <tbody>
+        <% if (!lista.length) { %><tr><td colspan="4" class="muted">Cadastre os itens: elevador, extintores, caixa d'água, dedetização, AVCB, seguro, para-raios, bombas.</td></tr><% } %>
+        <% for (const m of lista) { const diasFalta = Math.round((new Date(m.proxima_data) - new Date(hoje)) / 86400000); %>
+          <tr>
+            <td><b><%= m.titulo %></b><% if (m.descricao) { %><div class="small muted"><%= m.descricao %></div><% } %></td>
+            <td class="num"><%= m.proxima_data.split('-').reverse().join('/') %><div><span class="tag <%= diasFalta < 0 ? 'urgente' : (diasFalta <= m.antecedencia_dias ? 'alta' : '') %>"><%= diasFalta < 0 ? 'vencida' : diasFalta === 0 ? 'hoje' : `em ${diasFalta} dias` %></span></div></td>
+            <td class="num"><%= m.periodicidade_dias %> dias</td>
+            <td><div class="acoes">
+              <form method="post" action="/manutencoes/<%= m.id %>/feita" data-confirmar="Marcar como feita hoje e agendar a próxima?"><button class="btn peq" type="submit">Feita</button></form>
+              <a class="btn sec peq" href="/manutencoes?editar=<%= m.id %>">Editar</a>
+              <form method="post" action="/manutencoes/<%= m.id %>/excluir" data-confirmar="Excluir este item?"><button class="btn sec peq" type="submit">Excluir</button></form>
+            </div></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <form class="card campos" method="post" action="/manutencoes">
+    <h2><%= editar ? 'Editar item' : 'Novo item' %></h2>
+    <input type="hidden" name="id" value="<%= e.id || '' %>">
+    <label>Item<input name="titulo" id="titulo" value="<%= e.titulo || '' %>" required placeholder="Recarga dos extintores"></label>
+    <label>Detalhes<input name="descricao" id="descricao" value="<%= e.descricao || '' %>" placeholder="Fornecedor, contrato, observações"></label>
+    <div class="linha-campos">
+      <label>Próxima data<input type="date" name="proxima_data" id="proxima_data" value="<%= e.proxima_data || '' %>" required></label>
+      <label>Repetir a cada (dias)<input type="number" name="periodicidade_dias" id="periodicidade_dias" min="1" value="<%= e.periodicidade_dias || 365 %>"></label>
+      <label>Avisar com antecedência (dias)<input type="number" name="antecedencia_dias" id="antecedencia_dias" min="0" value="<%= e.antecedencia_dias || 15 %>"></label>
+    </div>
+    <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/manutencoes">Cancelar</a><% } %></div>
+  </form>
+</div>
+<%- include('partials/rodape') %>

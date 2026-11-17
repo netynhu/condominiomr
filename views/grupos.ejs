@@ -1,0 +1,23 @@
+<%- include('partials/topo') %>
+<div class="cabeca"><div><h1>Grupo dos moradores</h1><p class="muted">Escolha o grupo que o assistente vai ler. Ele só lê, nunca escreve.</p></div>
+<a class="btn sec" href="/whatsapp">Voltar</a></div>
+<% if (erro) { %><div class="flash erro">Não foi possível listar os grupos: <%= erro %>. O WhatsApp está conectado?</div><% } %>
+<div class="card">
+  <% if (!grupos.length && !erro) { %><p class="muted">Nenhum grupo encontrado. O número do prédio precisa estar no grupo dos moradores.</p><% } %>
+  <div class="lista">
+    <% for (const g of grupos) { %>
+      <div class="item">
+        <div><b><%= g.nome %></b><div class="small muted"><%= g.jid %></div></div>
+        <% if (g.jid === atual) { %>
+          <span class="tag resolvido">Lido agora</span>
+        <% } else { %>
+          <form method="post" action="/whatsapp/grupos"><input type="hidden" name="jid" value="<%= g.jid %>"><input type="hidden" name="nome" value="<%= g.nome %>"><button class="btn sec peq" type="submit">Ler este grupo</button></form>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+  <% if (atual) { %>
+    <form method="post" action="/whatsapp/grupos" data-confirmar="Parar de ler o grupo?"><input type="hidden" name="jid" value=""><button class="btn perigo peq" type="submit">Parar de ler o grupo</button></form>
+  <% } %>
+</div>
+<%- include('partials/rodape') %>

@@ -1,0 +1,51 @@
+<%- include('partials/topo') %>
+<% const e = editar || {}; %>
+<div class="cabeca">
+  <div><h1>Agenda do condomínio</h1><p class="muted">Eventos, reuniões, obras e interrupções. O assistente consulta esta agenda para responder aos moradores.</p></div>
+</div>
+
+<div class="grade2">
+  <div class="card">
+    <h2>Próximos</h2>
+    <div class="lista">
+      <% if (!lista.length) { %><p class="small muted">Nada agendado.</p><% } %>
+      <% for (const ev of lista) { const passou = new Date(ev.inicio) < new Date(); %>
+        <div class="item" style="<%= passou ? 'opacity:.55' : '' %>">
+          <div><b><%= ev.titulo %></b>
+            <div class="small"><%= u.dataExtenso(ev.inicio) %><%= ev.fim ? ' até ' + u.dataExtenso(ev.fim) : '' %></div>
+            <div class="small muted"><%= ev.local || '' %><%= ev.local ? ' · ' : '' %><%= ev.publico === 'todos' ? 'Todos' : 'Bloco ' + ev.publico.slice(6) %><%= ev.avisar_vespera ? (ev.lembrete_enviado ? ' · lembrete enviado' : ' · lembrete na véspera') : '' %></div>
+            <% if (ev.descricao) { %><div class="small muted"><%= ev.descricao %></div><% } %>
+          </div>
+          <div class="acoes">
+            <a class="btn sec peq" href="/agenda?editar=<%= ev.id %>#form">Editar</a>
+            <form method="post" action="/agenda/<%= ev.id %>/excluir" data-confirmar="Excluir este evento?"><button class="btn sec peq" type="submit">Excluir</button></form>
+          </div>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <form class="card campos" method="post" action="/agenda" id="form">
+    <h2><%= editar ? 'Editar evento' : 'Novo evento' %></h2>
+    <input type="hidden" name="id" value="<%= e.id || '' %>">
+    <label>Título<input name="titulo" id="titulo" value="<%= e.titulo || '' %>" required placeholder="Assembleia geral ordinária"></label>
+    <div class="linha-campos">
+      <label>Início<input type="datetime-local" name="inicio" id="inicio" value="<%= u.isoParaLocal(e.inicio) %>" required></label>
+      <label>Fim (opcional)<input type="datetime-local" name="fim" id="fim" value="<%= u.isoParaLocal(e.fim) %>"></label>
+    </div>
+    <div class="linha-campos">
+      <label>Local<input name="local" id="local" value="<%= e.local || '' %>" placeholder="Salão de festas"></label>
+      <label>Para quem
+        <select name="publico" id="publico">
+          <option value="todos">Todos</option>
+          <% for (const b of blocos) { %><option value="bloco:<%= b %>" <%= e.publico === 'bloco:' + b ? 'selected' : '' %>>Só o bloco <%= b %></option><% } %>
+        </select>
+      </label>
+    </div>
+    <label>Detalhes<textarea name="descricao" id="descricao"><%= e.descricao || '' %></textarea></label>
+    <label class="check"><input type="checkbox" name="avisar_vespera" id="avisar_vespera" <%= editar ? (e.avisar_vespera ? 'checked' : '') : 'checked' %>> Lembrar os moradores 24 horas antes</label>
+    <label class="check"><input type="checkbox" name="avisar_agora" id="avisar_agora"> Avisar os moradores agora também</label>
+    <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/agenda">Cancelar</a><% } %></div>
+  </form>
+</div>
+<%- include('partials/rodape') %>

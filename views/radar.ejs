@@ -1,0 +1,25 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Radar do grupo</h1><p class="muted"><%= grupo ? `O que está sendo falado no grupo "${grupo}" nos últimos 7 dias.` : 'Nenhum grupo escolhido. A administração escolhe o grupo na página do WhatsApp.' %></p></div>
+  <form method="post" action="/radar/analisar" id="form-radar"><button class="btn" type="submit" id="btn-radar">Analisar com IA</button></form>
+</div>
+
+<div class="grade2">
+  <div class="card">
+    <h2>Análise</h2>
+    <div class="ia"><%= analise || 'Clique em "Analisar com IA" para ver os assuntos mais comentados, o clima do grupo e problemas que ainda não viraram chamado.' %></div>
+    <% if (analiseEm) { %><p class="small muted">Gerada em <%= u.dataHora(analiseEm) %></p><% } %>
+  </div>
+  <div class="card">
+    <h2>Mensagens (<%= msgs.length %>)</h2>
+    <div class="lista" style="max-height:600px;overflow-y:auto">
+      <% if (!msgs.length) { %><p class="small muted">Nenhuma mensagem lida ainda.</p><% } %>
+      <% for (const m of msgs) { %>
+        <div class="item"><div><b class="small"><%= m.nome || u.formatarTelefone(m.telefone) || 'morador' %></b><% if (m.morador_id && usuario.perfil === 'admin') { %> <a class="small" href="/moradores/<%= m.morador_id %>">ficha</a><% } %>
+          <div><%= m.texto %></div><div class="small muted"><%= u.dataHora(m.criado_em) %></div></div></div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<script>document.getElementById('form-radar').addEventListener('submit', () => { const b = document.getElementById('btn-radar'); b.disabled = true; b.textContent = 'Analisando...'; });</script>
+<%- include('partials/rodape') %>

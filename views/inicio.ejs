@@ -1,0 +1,59 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Bom dia, <%= u.primeiroNome(usuario.nome) %>.</h1><p class="muted"><%= u.dataExtenso(new Date().toISOString()) %></p></div>
+  <% if (!whats || !whats.conectado) { %><a class="btn" href="/whatsapp">Conectar o WhatsApp</a><% } %>
+</div>
+
+<div class="numeros">
+  <a class="numero <%= urgentes ? 'atencao' : '' %>" href="/chamados"><b><%= abertos %></b><span>chamados em aberto<%= urgentes ? `, ${urgentes} com prioridade alta` : '' %></span></a>
+  <a class="numero <%= reclNovas ? 'atencao' : '' %>" href="/reclamacoes"><b><%= reclNovas %></b><span>reclamações novas</span></a>
+  <a class="numero <%= pendentes ? 'atencao' : '' %>" href="/moradores#pendentes"><b><%= pendentes %></b><span>números sem cadastro</span></a>
+  <a class="numero" href="/moradores"><b><%= moradores %></b><span>moradores ativos</span></a>
+  <a class="numero" href="/avisos"><b><%= fila %></b><span>mensagens na fila de envio</span></a>
+  <a class="numero" href="/whatsapp"><b style="font-size:1.1rem;padding:9px 0"><%= whats ? (whats.conectado ? 'Conectado' : 'Desconectado') : 'Sem resposta' %></b><span>WhatsApp do prédio</span></a>
+</div>
+
+<div class="grade2">
+  <div class="card">
+    <div class="acoes" style="justify-content:space-between">
+      <h2>Resumo do dia pela IA</h2>
+      <button class="btn peq" type="button" id="btn-resumo">Gerar resumo agora</button>
+    </div>
+    <div class="ia" id="resumo"><%= resumo || 'Clique em "Gerar resumo agora". A IA lê chamados, reclamações, agenda, manutenções e o grupo, e diz o que fazer primeiro.' %></div>
+    <p class="small muted" id="resumo-em"><%= resumoEm ? 'Gerado em ' + u.dataHora(resumoEm) : '' %></p>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="card">
+      <h2>Pergunte aos dados</h2>
+      <form class="campos" id="form-pergunta">
+        <input name="pergunta" id="pergunta" placeholder="Ex.: quantas reclamações de barulho no bloco B este mês?" required>
+        <button class="btn sec" type="submit" id="btn-pergunta">Perguntar</button>
+      </form>
+      <div class="ia" id="resposta" hidden></div>
+    </div>
+    <div class="card">
+      <div class="acoes" style="justify-content:space-between"><h2>Próximos na agenda</h2><a class="small" href="/agenda">Ver agenda</a></div>
+      <% if (!eventos.length) { %><p class="muted small">Nada agendado. Cadastre eventos para o assistente saber responder.</p><% } %>
+      <div class="lista">
+        <% for (const e of eventos) { %><div class="item"><div><b><%= e.titulo %></b><div class="small muted"><%= u.dataExtenso(e.inicio) %></div></div></div><% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('btn-resumo').addEventListener('click', (e) => ocupado(e.target, async () => {
+  const r = await postJSON('/ia/resumo');
+  document.getElementById('resumo').textContent = r.texto;
+  document.getElementById('resumo-em').textContent = 'Gerado em ' + r.em;
+}));
+document.getElementById('form-pergunta').addEventListener('submit', (e) => {
+  e.preventDefault();
+  ocupado(document.getElementById('btn-pergunta'), async () => {
+    const r = await postJSON('/ia/pergunta', { pergunta: document.getElementById('pergunta').value });
+    const el = document.getElementById('resposta'); el.hidden = false; el.textContent = r.texto;
+  });
+});
+</script>
+<%- include('partials/rodape') %>

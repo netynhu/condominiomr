@@ -1,0 +1,97 @@
+// Rotinas automáticas que rodam enquanto o servidor estiver ligado
+const { db, ok, getConfig } = require('./db');
+const { env } = require('./config');
+const uazapi = require('./uazapi');
+const sv = require('./servicos');
+const { agoraBR, dataExtenso, primeiroNome } = require('./util');
+
+let proximoEnvio = 0;
+let enviando = false;
+
+function dentroDoHorario() {
+  const { hora } = agoraBR();
+  return hora >= env.ENVIO_HORA_INICIO && hora < env.ENVIO_HORA_FIM;
+}
+
+// Envia uma mensagem da fila por vez, com intervalo aleatório, para proteger o número
+async function processarFila() {
+  if (enviando || Date.now() < proximoEnvio || !dentroDoHorario()) return;
+  enviando = true;
+  try {
+    const [item] = ok(await db.from('fila_envio').select('*').eq('status', 'pendente').lte('agendado_para', new Date().toISOString()).order('id').limit(1));
+    if (!item) return;
+    try {
+      await uazapi.enviarTexto(item.telefone, item.texto);
+      await db.from('fila_envio').update({ status: 'enviado', enviado_em: new Date().toISOString() }).eq('id', item.id);
+      const m = await sv.acharMorador(item.telefone);
+      await db.from('mensagens').insert({ morador_id: m?.id || null, telefone: item.telefone, direcao: 'saida', texto: item.texto });
+    } catch (e) {
+      const tentativas = item.tentativas + 1;
+      await db.from('fila_envio').update({
+        tentativas, erro: e.message.slice(0, 500), status: tentativas >= 3 ? 'erro' : 'pendente',
+        agendado_para: new Date(Date.now() + 5 * 60000).toISOString(),
+      }).eq('id', item.id);
+    }
+    if (item.aviso_id) {
+      const restantes = (await db.from('fila_envio').select('*', { count: 'exact', head: true }).eq('aviso_id', item.aviso_id).eq('status', 'pendente')).count;
+      if (restantes === 0) await db.from('avisos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).eq('id', item.aviso_id);
+    }
+    const min = env.ENVIO_INTERVALO_MIN * 1000;
+    const max = Math.max(min, env.ENVIO_INTERVALO_MAX * 1000);
+    proximoEnvio = Date.now() + min + Math.random() * (max - min);
+  } finally {
+    enviando = false;
+  }
+}
+
+// Lembretes pessoais pedidos pelos moradores
+async function enviarLembretes() {
+  const l = ok(await db.from('lembretes').select('*, morador:moradores(id, nome, telefone, ativo)').eq('enviado', false).lte('enviar_em', new Date().toISOString()).limit(20));
+  for (const r of l) {
+    await db.from('lembretes').update({ enviado: true }).eq('id', r.id);
+    if (r.morador?.ativo) await sv.enviar(r.morador.telefone, `Oi, ${primeiroNome(r.morador.nome)}! Passando para lembrar: ${r.texto}`, r.morador.id);
+  }
+}
+
+// Aviso na véspera dos eventos da agenda
+async function lembrarEventos() {
+  const agora = Date.now();
+  const l = ok(await db.from('eventos').select('*').eq('avisar_vespera', true).eq('lembrete_enviado', false)
+    .gt('inicio', new Date(agora).toISOString()).lte('inicio', new Date(agora + 24 * 3600000).toISOString()));
+  for (const ev of l) {
+    await db.from('eventos').update({ lembrete_enviado: true }).eq('id', ev.id);
+    const texto = `Lembrete do condomínio: ${ev.titulo}\nQuando: ${dataExtenso(ev.inicio)}${ev.local ? `\nOnde: ${ev.local}` : ''}${ev.descricao ? `\n\n${ev.descricao}` : ''}`;
+    await sv.enfileirar(ev.publico, texto, null);
+  }
+}
+
+// Manutenção preventiva: abre chamado e avisa o síndico quando o prazo se aproxima
+async function verificarManutencoes() {
+  const hoje = agoraBR().dataISO;
+  const l = ok(await db.from('manutencoes').select('*'));
+  for (const m of l) {
+    const limite = new Date(new Date(m.proxima_data + 'T12:00:00-03:00').getTime() - m.antecedencia_dias * 86400000).toISOString().slice(0, 10);
+    if (hoje < limite || m.alerta_enviado_para === m.proxima_data) continue;
+    await db.from('manutencoes').update({ alerta_enviado_para: m.proxima_data }).eq('id', m.id);
+    const ch = await sv.abrirChamado({
+      titulo: `Manutenção preventiva: ${m.titulo}`, descricao: `${m.descricao || ''}\nPrazo: ${m.proxima_data.split('-').reverse().join('/')}`.trim(),
+      local: 'Áreas comuns', categoria: 'manutencao', prioridade: 'alta', origem: 'manutencao_preventiva', usuarioNome: 'Rotina automática',
+    });
+    await sv.avisarEquipe('sindico', `Manutenção preventiva próxima do prazo: ${m.titulo} (até ${m.proxima_data.split('-').reverse().join('/')}). Chamado nº ${ch.id} aberto.`);
+  }
+}
+
+function seguro(nome, fn) {
+  return () => fn().catch((e) => console.error(`[rotina ${nome}]`, e.message));
+}
+
+function iniciar() {
+  setInterval(seguro('fila', processarFila), 5000);
+  setInterval(seguro('lembretes', enviarLembretes), 60000);
+  setInterval(seguro('eventos', lembrarEventos), 5 * 60000);
+  setInterval(seguro('manutencao', verificarManutencoes), 60 * 60000);
+  setTimeout(seguro('manutencao', verificarManutencoes), 15000);
+  console.log('[rotinas] fila de envio, lembretes, eventos e manutenção ativos');
+}
+
+module.exports = { iniciar };

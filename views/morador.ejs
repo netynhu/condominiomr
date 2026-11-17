@@ -1,0 +1,82 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1><%= m.nome %></h1><p class="muted"><%= u.rotuloUnidade(m.unidade) %> · <%= u.formatarTelefone(m.telefone) %></p></div>
+  <a class="btn sec" href="/moradores">Voltar</a>
+</div>
+
+<div class="grade2">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="card" id="memoria">
+      <h2>O que o assistente sabe sobre <%= u.primeiroNome(m.nome) %></h2>
+      <div class="ia"><%= m.resumo_perfil || 'Sem resumo ainda. O resumo é atualizado sozinho conforme a pessoa conversa.' %></div>
+      <div class="lista">
+        <% if (!memoria.length) { %><p class="small muted">Nenhum fato guardado.</p><% } %>
+        <% for (const f of memoria) { %>
+          <div class="item">
+            <div><%= f.fato %><div class="small muted"><%= f.origem %> · <%= u.data(f.criado_em) %></div></div>
+            <form method="post" action="/memoria/<%= f.id %>/excluir" data-confirmar="Apagar este fato da memória?"><button class="btn sec peq" type="submit">Apagar</button></form>
+          </div>
+        <% } %>
+      </div>
+      <form class="acoes" method="post" action="/moradores/<%= m.id %>/memoria">
+        <input name="fato" id="fato" placeholder="Acrescentar um fato (ex.: prefere contato após 19h)" style="flex:1;min-width:200px">
+        <button class="btn sec" type="submit">Guardar</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Conversa no WhatsApp</h2>
+      <div class="conversa" id="conversa">
+        <% if (!mensagens.length) { %><p class="small muted">Nenhuma mensagem ainda.</p><% } %>
+        <% for (const x of mensagens) { %>
+          <div class="bolha <%= x.direcao %>"><%= x.texto %><small><%= u.dataHora(x.criado_em) %></small></div>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (grupo.length) { %>
+    <div class="card">
+      <h2>Mensagens recentes no grupo</h2>
+      <div class="lista"><% for (const g of grupo) { %><div class="item"><div><%= g.texto %><div class="small muted"><%= u.dataHora(g.criado_em) %></div></div></div><% } %></div>
+    </div>
+    <% } %>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <form class="card campos" method="post" action="/moradores/<%= m.id %>">
+      <h2>Cadastro</h2>
+      <label>Nome<input name="nome" id="nome" value="<%= m.nome %>" required></label>
+      <label>WhatsApp<input name="telefone" id="telefone" value="<%= m.telefone %>" required></label>
+      <div class="linha-campos">
+        <label>Bloco<input name="bloco" id="bloco" value="<%= m.unidade ? m.unidade.bloco : '' %>"></label>
+        <label>Apartamento<input name="numero" id="numero" value="<%= m.unidade ? m.unidade.numero : '' %>"></label>
+      </div>
+      <div class="linha-campos">
+        <label>Vínculo<select name="tipo" id="tipo">
+          <% for (const t of ['morador','proprietario','inquilino','outro']) { %><option value="<%= t %>" <%= m.tipo === t ? 'selected' : '' %>><%= t %></option><% } %>
+        </select></label>
+        <label>E-mail<input type="email" name="email" id="email" value="<%= m.email || '' %>"></label>
+      </div>
+      <label>Resumo do perfil (a IA atualiza, mas você pode corrigir)<textarea name="resumo_perfil" id="resumo_perfil"><%= m.resumo_perfil || '' %></textarea></label>
+      <label class="check"><input type="checkbox" name="ativo" id="ativo" <%= m.ativo ? 'checked' : '' %>> Ativo (o assistente atende)</label>
+      <label class="check"><input type="checkbox" name="aceita_avisos" id="aceita_avisos" <%= m.aceita_avisos ? 'checked' : '' %>> Recebe avisos gerais</label>
+      <button class="btn" type="submit">Salvar</button>
+    </form>
+
+    <div class="card">
+      <h2>Chamados</h2>
+      <div class="lista">
+        <% if (!chamados.length) { %><p class="small muted">Nenhum chamado.</p><% } %>
+        <% for (const c of chamados) { %>
+          <div class="item"><div><a href="/chamados/<%= c.id %>">nº <%= c.id %> · <%= c.titulo %></a><div class="small muted"><%= u.data(c.criado_em) %></div></div><span class="tag <%= c.status %>"><%= c.status.replace('_',' ') %></span></div>
+        <% } %>
+      </div>
+    </div>
+
+    <form method="post" action="/moradores/<%= m.id %>/excluir" data-confirmar="Excluir este morador? A memória e as mensagens dele também serão apagadas. Não dá para desfazer.">
+      <button class="btn perigo" type="submit">Excluir morador e apagar dados</button>
+    </form>
+  </div>
+</div>
+<script>const c = document.getElementById('conversa'); c.scrollTop = c.scrollHeight;</script>
+<%- include('partials/rodape') %>

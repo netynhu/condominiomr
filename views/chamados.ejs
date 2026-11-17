@@ -1,0 +1,43 @@
+<%- include('partials/topo') %>
+<% const rot = { aberto: 'Aberto', em_andamento: 'Em andamento', resolvido: 'Resolvido', cancelado: 'Cancelado' }; %>
+<div class="cabeca">
+  <div><h1>Chamados</h1><p class="muted"><%= usuario.perfil === 'zelador' ? 'Toque em um chamado para atualizar. O morador é avisado sozinho.' : 'Pedidos dos moradores e da administração.' %></p></div>
+  <div class="filtros">
+    <% for (const [k, n] of [['abertos','Em aberto'],['resolvido','Resolvidos'],['cancelado','Cancelados'],['todos','Todos']]) { %>
+      <a href="/chamados?status=<%= k %>" class="<%= filtro === k ? 'ativo' : '' %>"><%= n %></a>
+    <% } %>
+  </div>
+</div>
+
+<% if (!lista.length) { %><div class="card"><p class="muted">Nenhum chamado aqui.</p></div><% } %>
+<div class="chamados">
+  <% for (const c of lista) { %>
+    <a class="chamado <%= c.prioridade %>" href="/chamados/<%= c.id %>">
+      <div class="topo-c"><span class="small muted">nº <%= c.id %> · <%= u.dataHora(c.criado_em) %></span><span class="tag <%= c.status %>"><%= rot[c.status] %></span></div>
+      <b><%= c.titulo %></b>
+      <span class="small"><%= c.local || '' %></span>
+      <span class="small muted">
+        <%= c.morador ? `${c.morador.nome} · ${c.morador.unidade ? (c.morador.unidade.bloco ? c.morador.unidade.bloco + '-' : '') + c.morador.unidade.numero : ''}` : (c.origem === 'manutencao_preventiva' ? 'Manutenção preventiva' : 'Administração') %>
+        <% if (c.prioridade === 'urgente' || c.prioridade === 'alta') { %> · <span class="tag <%= c.prioridade %>"><%= c.prioridade %></span><% } %>
+        <% if (c.categoria === 'administracao') { %> · <span class="tag">administração</span><% } %>
+      </span>
+    </a>
+  <% } %>
+</div>
+
+<% if (usuario.perfil === 'admin') { %>
+<details class="card">
+  <summary>Abrir chamado pelo painel</summary>
+  <form class="campos" method="post" action="/chamados">
+    <label>Título<input name="titulo" id="titulo" required></label>
+    <div class="linha-campos">
+      <label>Local<input name="local" id="local"></label>
+      <label>Categoria<select name="categoria" id="categoria"><option value="manutencao">Manutenção</option><option value="limpeza">Limpeza</option><option value="seguranca">Segurança</option><option value="administracao">Administração</option></select></label>
+      <label>Prioridade<select name="prioridade" id="prioridade"><option value="normal">Normal</option><option value="baixa">Baixa</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select></label>
+    </div>
+    <label>Descrição<textarea name="descricao" id="descricao"></textarea></label>
+    <button class="btn" type="submit">Abrir chamado</button>
+  </form>
+</details>
+<% } %>
+<%- include('partials/rodape') %>
