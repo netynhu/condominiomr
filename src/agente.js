@@ -141,32 +141,21 @@ async function executar(nome, args, ctx) {
   }
 }
 
-async function montarSistema(cfg, morador) {
-  const [docs, fatos, abertos] = await Promise.all([
-    db.from('documentos').select('titulo, conteudo').eq('ativo', true).order('criado_em').then(ok),
-    db.from('memoria').select('fato, criado_em').eq('morador_id', morador.id).order('criado_em', { ascending: false }).limit(40).then(ok),
-    db.from('chamados').select('id, titulo, status').eq('morador_id', morador.id).in('status', ['aberto', 'em_andamento']).limit(10).then(ok),
-  ]);
-
+// O prompt é dividido em duas partes para aproveitar o cache da OpenAI:
+// 1) parte fixa do prédio (regras + documentos), igual para todos os moradores e todas as mensagens.
+//    A OpenAI reaproveita esse começo idêntico e cobra cerca de 1/4 do preço dele.
+// 2) parte variável (data/hora, quem está falando, memória), que vem depois.
+// Não coloque nada que muda (data, nome, número) dentro da parte fixa, senão o cache deixa de funcionar.
+async function montarParteFixa(cfg) {
+  const docs = ok(await db.from('documentos').select('titulo, conteudo').eq('ativo', true).order('criado_em'));
   let textoDocs = docs.map((d) => `### ${d.titulo}\n${d.conteudo}`).join('\n\n');
   if (textoDocs.length > LIMITE_DOCS) textoDocs = textoDocs.slice(0, LIMITE_DOCS) + '\n[...documento cortado...]';
 
-  return `Você é "${cfg.nome_assistente}", o assistente oficial de WhatsApp do ${cfg.nome_predio}. Você conversa individualmente com cada morador.
-
-Agora: ${dataExtenso(new Date().toISOString())} (horário de Brasília).
-
-QUEM ESTÁ FALANDO
-Nome: ${morador.nome}
-Unidade: ${rotuloUnidade(morador.unidade)}
-Vínculo: ${morador.tipo}
-Resumo do perfil: ${morador.resumo_perfil || 'ainda sem resumo'}
-O que você já sabe sobre essa pessoa:
-${fatos.length ? fatos.map((f) => `- ${f.fato}`).join('\n') : '- nada ainda'}
-Chamados em aberto: ${abertos.length ? abertos.map((c) => `nº ${c.id} ${c.titulo} (${sv.ROTULO_STATUS[c.status]})`).join('; ') : 'nenhum'}
+  return `Você é "${cfg.nome_assistente}", o assistente oficial de WhatsApp do ${cfg.nome_predio}. Você conversa individualmente com cada morador. Os dados de quem está falando e a data de hoje vêm na próxima mensagem do sistema.
 
 COMO SE COMPORTAR
 - Português do Brasil, cordial e direto. Mensagens curtas, próprias de WhatsApp. Sem markdown, sem títulos, no máximo um emoji quando fizer sentido.
-- Chame a pessoa pelo primeiro nome (${primeiroNome(morador.nome)}) ou como ela preferir.
+- Chame a pessoa pelo primeiro nome ou como ela preferir.
 - Resolva usando as ferramentas: abrir chamado, registrar reclamação, consultar agenda, agendar lembrete. Depois de usar uma, informe o número/protocolo.
 - Dúvidas sobre regras: responda SOMENTE com base nos documentos abaixo e cite o artigo ou documento. Se não estiver nos documentos, diga que vai encaminhar e use encaminhar_administracao. Nunca invente regra, valor, data ou nome.
 - Reclamações: garanta ao morador que o nome dele não será revelado. Não julgue nem exponha o vizinho.
@@ -180,6 +169,31 @@ DOCUMENTOS DO CONDOMÍNIO
 ${textoDocs || '(nenhum documento cadastrado ainda: encaminhe dúvidas de regras à administração)'}`;
 }
 
+async function montarParteVariavel(morador) {
+  const [fatos, abertos] = await Promise.all([
+    db.from('memoria').select('fato, criado_em').eq('morador_id', morador.id).order('criado_em', { ascending: false }).limit(40).then(ok),
+    db.from('chamados').select('id, titulo, status').eq('morador_id', morador.id).in('status', ['aberto', 'em_andamento']).limit(10).then(ok),
+  ]);
+  return `Agora: ${dataExtenso(new Date().toISOString())} (horário de Brasília).
+
+QUEM ESTÁ FALANDO
+Nome: ${morador.nome} (primeiro nome: ${primeiroNome(morador.nome)})
+Unidade: ${rotuloUnidade(morador.unidade)}
+Vínculo: ${morador.tipo}
+Resumo do perfil: ${morador.resumo_perfil || 'ainda sem resumo'}
+O que você já sabe sobre essa pessoa:
+${fatos.length ? fatos.map((f) => `- ${f.fato}`).join('\n') : '- nada ainda'}
+Chamados em aberto: ${abertos.length ? abertos.map((c) => `nº ${c.id} ${c.titulo} (${sv.ROTULO_STATUS[c.status]})`).join('; ') : 'nenhum'}`;
+}
+
+// Mostra no log quanto do prompt veio do cache, para conferir a economia
+function registrarUso(uso) {
+  if (!uso) return;
+  const cache = uso.prompt_tokens_details?.cached_tokens || 0;
+  const pct = uso.prompt_tokens ? Math.round((cache / uso.prompt_tokens) * 100) : 0;
+  console.log(`[agente] tokens: entrada ${uso.prompt_tokens} (cache ${cache}, ${pct}%), saída ${uso.completion_tokens}`);
+}
+
 async function responder(morador, texto) {
   const cfg = await getConfig();
   const anteriores = ok(await db.from('mensagens').select('direcao, texto').eq('telefone', morador.telefone).order('criado_em', { ascending: false }).limit(HISTORICO + 1)).reverse();
@@ -187,7 +201,8 @@ async function responder(morador, texto) {
   if (anteriores.length && anteriores[anteriores.length - 1].direcao === 'entrada') anteriores.pop();
 
   const mensagens = [
-    { role: 'system', content: await montarSistema(cfg, morador) },
+    { role: 'system', content: await montarParteFixa(cfg) },
+    { role: 'system', content: await montarParteVariavel(morador) },
     ...anteriores.map((m) => ({ role: m.direcao === 'entrada' ? 'user' : 'assistant', content: m.texto })),
     { role: 'user', content: texto },
   ];
@@ -197,6 +212,7 @@ async function responder(morador, texto) {
 
   for (let volta = 0; volta < 6; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.4 });
+    registrarUso(r.usage);
     const msg = r.choices[0].message;
     if (!msg.tool_calls?.length) return (msg.content || '').trim();
     mensagens.push(msg);
