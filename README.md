@@ -59,7 +59,9 @@ Crie uma chave em platform.openai.com. O modelo é definido em `OPENAI_MODEL` (p
 3. **WhatsApp > Escolher grupo**: selecione o grupo dos moradores (o número do prédio precisa estar no grupo).
 4. **Configurações**: telefones do síndico, zelador e portaria para receber alertas.
 5. **Documentos**: cole o regimento interno e a convenção.
-6. **Moradores**: cadastre ou importe a lista (`nome; telefone; bloco; apartamento; e-mail`).
+6. **Moradores**: cadastre ou importe a lista (`nome; telefone; bloco; apartamento; e-mail; vaga`).
+
+> Banco criado antes da versão com vaga de garagem? Rode `supabase/migracoes/002_vaga_morador.sql` no SQL Editor.
 7. **Equipe**: crie os acessos do zelador, portaria e conselho.
 8. **Manutenção** e **Agenda**: cadastre os itens e eventos.
 

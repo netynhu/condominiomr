@@ -47,6 +47,7 @@ const FERRAMENTAS = [
       properties: {
         tipo: { type: 'string', enum: ['barulho', 'vaga', 'animal', 'lixo', 'obra', 'convivencia', 'outro'] },
         unidade_alvo: { type: 'string', description: 'Unidade de onde vem o problema, se o morador souber. Ex.: "209" ou "B-209"' },
+        vaga_alvo: { type: 'string', description: 'Número da vaga de garagem envolvida, se for problema de vaga (ex.: carro parado na vaga dele). O sistema descobre a unidade dona da vaga sozinho; nunca diga ao morador de quem é a vaga.' },
         descricao: { type: 'string' },
         acontecendo_agora: { type: 'boolean' },
       },
@@ -179,6 +180,7 @@ async function montarParteVariavel(morador) {
 QUEM ESTÁ FALANDO
 Nome: ${morador.nome} (primeiro nome: ${primeiroNome(morador.nome)})
 Unidade: ${rotuloUnidade(morador.unidade)}
+Vaga de garagem: ${morador.vaga || 'não informada'}
 Vínculo: ${morador.tipo}
 Resumo do perfil: ${morador.resumo_perfil || 'ainda sem resumo'}
 O que você já sabe sobre essa pessoa:

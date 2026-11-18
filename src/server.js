@@ -2,7 +2,8 @@ const path = require('path');
 const express = require('express');
 const cookieSession = require('cookie-session');
 const { env, faltando } = require('./config');
-const { getConfig } = require('./db');
+const { getConfig, contar } = require('./db');
+const { icone } = require('./icones');
 const util = require('./util');
 const uazapi = require('./uazapi');
 const agente = require('./agente');
@@ -64,8 +65,24 @@ app.use(async (req, res, next) => {
   res.locals.caminho = req.path;
   res.locals.aviso = req.session.aviso || null;
   res.locals.faltando = faltando;
+  res.locals.icone = icone;
+  res.locals.contadores = {};
   req.session.aviso = null;
   try { res.locals.cfg = await getConfig(); } catch { res.locals.cfg = { nome_predio: 'Condomínio' }; }
+  // Números que aparecem no menu lateral (chamados e reclamações pendentes)
+  const u = req.session.usuario;
+  if (u && u.perfil !== 'conselho' && req.method === 'GET' && !req.path.endsWith('.json')) {
+    try {
+      const [chamados, reclamacoes] = await Promise.all([
+        u.perfil === 'portaria' ? 0 : contar('chamados', (q) => {
+          q = q.in('status', ['aberto', 'em_andamento']);
+          return u.perfil === 'zelador' ? q.neq('categoria', 'administracao') : q;
+        }),
+        u.perfil === 'zelador' ? 0 : contar('reclamacoes', (q) => q.eq('status', 'nova')),
+      ]);
+      res.locals.contadores = { chamados, reclamacoes };
+    } catch { /* menu sem números se o banco falhar */ }
+  }
   next();
 });
 

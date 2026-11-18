@@ -12,10 +12,17 @@ document.addEventListener('submit', (e) => {
   if (msg && !window.confirm(msg)) e.preventDefault();
 });
 
+// Menu lateral no celular
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#abrir-menu')) document.body.classList.add('menu-aberto');
+  else if (e.target.closest('[data-fechar-menu]')) document.body.classList.remove('menu-aberto');
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.body.classList.remove('menu-aberto'); });
+
 // Botão ocupado enquanto a IA trabalha
 async function ocupado(botao, fn) {
-  const t = botao.textContent;
+  const t = botao.innerHTML;
   botao.disabled = true;
   botao.textContent = 'Aguarde...';
-  try { await fn(); } catch (err) { alert(err.message); } finally { botao.disabled = false; botao.textContent = t; }
+  try { await fn(); } catch (err) { alert(err.message); } finally { botao.disabled = false; botao.innerHTML = t; }
 }

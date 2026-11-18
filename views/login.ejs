@@ -1,7 +1,8 @@
 <%- include('partials/topo') %>
 <div class="entrar">
   <form class="card campos" method="post" action="/login">
-    <div><h1><%= cfg.nome_predio %></h1><p class="muted">Painel do assistente do condomínio</p></div>
+    <span class="logo"><%- icone('predio') %></span>
+    <div><h1><%= cfg.nome_predio %></h1><p class="muted">Entre no painel do assistente do condomínio.</p></div>
     <% if (erro) { %><div class="flash erro"><%= erro %></div><% } %>
     <label>E-mail<input type="email" name="email" id="email" value="<%= email %>" required autofocus autocomplete="username"></label>
     <label>Senha<input type="password" name="senha" id="senha" required autocomplete="current-password"></label>

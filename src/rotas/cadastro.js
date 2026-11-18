@@ -23,7 +23,7 @@ router.get('/moradores', admin, a(async (req, res) => {
     db.from('contatos_pendentes').select('*').order('atualizado_em', { ascending: false }).then(ok),
   ]);
   const lista = busca
-    ? moradores.filter((m) => [m.nome, m.telefone, m.email, m.unidade?.numero, m.unidade?.bloco].join(' ').toLowerCase().includes(busca))
+    ? moradores.filter((m) => [m.nome, m.telefone, m.email, m.unidade?.numero, m.unidade?.bloco, m.vaga && `vaga ${m.vaga}`].join(' ').toLowerCase().includes(busca))
     : moradores;
   lista.sort((x, y) => `${x.unidade?.bloco || ''}${(x.unidade?.numero || '').padStart(6, '0')}`.localeCompare(`${y.unidade?.bloco || ''}${(y.unidade?.numero || '').padStart(6, '0')}`));
   res.render('moradores', { titulo: 'Moradores', lista, pendentes, busca, total: moradores.length, novo: { telefone: req.query.telefone || '', nome: req.query.nome || '' } });
@@ -34,7 +34,7 @@ router.post('/moradores', admin, a(async (req, res) => {
   const telefone = normalizarTelefone(b.telefone);
   if (!b.nome || telefone.length < 12) { avisar(req, 'Informe nome e telefone com DDD.', 'erro'); return res.redirect('/moradores'); }
   const r = await db.from('moradores').insert({
-    nome: b.nome.trim(), telefone, email: b.email || null, tipo: b.tipo || 'morador',
+    nome: b.nome.trim(), telefone, email: b.email || null, tipo: b.tipo || 'morador', vaga: (b.vaga || '').trim() || null,
     unidade_id: await unidadeId(b.bloco, b.numero),
   });
   if (r.error) { avisar(req, r.error.code === '23505' ? 'Este telefone já está cadastrado.' : r.error.message, 'erro'); return res.redirect('/moradores'); }
@@ -43,15 +43,15 @@ router.post('/moradores', admin, a(async (req, res) => {
   res.redirect('/moradores');
 }));
 
-// Importação: uma linha por morador -> nome; telefone; bloco; apartamento; e-mail
+// Importação: uma linha por morador -> nome; telefone; bloco; apartamento; e-mail; vaga
 router.post('/moradores/importar', admin, a(async (req, res) => {
   const linhas = String(req.body.lista || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   let criados = 0; const erros = [];
   for (const [i, linha] of linhas.entries()) {
-    const [nome, tel, bloco, numero, email] = linha.split(/[;\t]/).map((x) => (x || '').trim());
+    const [nome, tel, bloco, numero, email, vaga] = linha.split(/[;\t]/).map((x) => (x || '').trim());
     const telefone = normalizarTelefone(tel);
     if (!nome || telefone.length < 12) { erros.push(`linha ${i + 1}`); continue; }
-    const r = await db.from('moradores').upsert({ nome, telefone, email: email || null, unidade_id: await unidadeId(bloco, numero) }, { onConflict: 'telefone' });
+    const r = await db.from('moradores').upsert({ nome, telefone, email: email || null, vaga: vaga || null, unidade_id: await unidadeId(bloco, numero) }, { onConflict: 'telefone' });
     if (r.error) erros.push(`linha ${i + 1}`); else criados++;
   }
   avisar(req, `${criados} moradores importados.${erros.length ? ` Não importadas: ${erros.join(', ')}.` : ''}`, erros.length ? 'erro' : 'ok');
@@ -77,7 +77,7 @@ router.get('/moradores/:id', admin, a(async (req, res) => {
 router.post('/moradores/:id', admin, a(async (req, res) => {
   const b = req.body;
   const r = await db.from('moradores').update({
-    nome: b.nome, telefone: normalizarTelefone(b.telefone), email: b.email || null, tipo: b.tipo,
+    nome: b.nome, telefone: normalizarTelefone(b.telefone), email: b.email || null, tipo: b.tipo, vaga: (b.vaga || '').trim() || null,
     ativo: b.ativo === 'on', aceita_avisos: b.aceita_avisos === 'on', resumo_perfil: b.resumo_perfil || null,
     unidade_id: await unidadeId(b.bloco, b.numero),
   }).eq('id', req.params.id);

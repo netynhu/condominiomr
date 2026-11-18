@@ -1,7 +1,7 @@
 <%- include('partials/topo') %>
 <div class="cabeca">
   <div><h1>Moradores</h1><p class="muted"><%= total %> cadastrados. Só números cadastrados aqui são atendidos pelo assistente.</p></div>
-  <form method="get" action="/moradores" class="acoes"><input name="q" id="q" value="<%= busca %>" placeholder="Buscar nome, telefone, apto" style="width:240px"><button class="btn sec" type="submit">Buscar</button></form>
+  <form method="get" action="/moradores" class="acoes"><input name="q" id="q" value="<%= busca %>" placeholder="Buscar nome, telefone, apto ou vaga" style="width:240px"><button class="btn sec" type="submit">Buscar</button></form>
 </div>
 
 <% if (pendentes.length) { %>
@@ -26,14 +26,15 @@
 <div class="grade2">
   <div class="tabela">
     <table>
-      <thead><tr><th>Unidade</th><th>Nome</th><th>Telefone</th><th>Avisos</th><th>Última conversa</th></tr></thead>
+      <thead><tr><th>Unidade</th><th>Nome</th><th>Telefone</th><th>Vaga</th><th>Avisos</th><th>Última conversa</th></tr></thead>
       <tbody>
-        <% if (!lista.length) { %><tr><td colspan="5" class="muted">Nenhum morador ainda. Cadastre ao lado ou importe uma lista.</td></tr><% } %>
+        <% if (!lista.length) { %><tr><td colspan="6" class="muted">Nenhum morador ainda. Cadastre ao lado ou importe uma lista.</td></tr><% } %>
         <% for (const m of lista) { %>
           <tr style="<%= m.ativo ? '' : 'opacity:.5' %>">
             <td class="num"><%= m.unidade ? (m.unidade.bloco ? m.unidade.bloco + ' · ' : '') + m.unidade.numero : '-' %></td>
             <td><a href="/moradores/<%= m.id %>"><%= m.nome %></a> <span class="small muted"><%= m.tipo %></span></td>
             <td class="num"><%= u.formatarTelefone(m.telefone) %></td>
+            <td class="num"><%= m.vaga || '-' %></td>
             <td><%= m.aceita_avisos ? 'Sim' : 'Não' %></td>
             <td class="small muted"><%= m.ultima_interacao ? u.dataHora(m.ultima_interacao) : 'nunca' %></td>
           </tr>
@@ -50,6 +51,7 @@
       <div class="linha-campos">
         <label>Bloco<input name="bloco" id="novo-bloco" placeholder="A"></label>
         <label>Apartamento<input name="numero" id="novo-numero" required placeholder="304"></label>
+        <label>Vaga<input name="vaga" id="novo-vaga" placeholder="12"></label>
       </div>
       <div class="linha-campos">
         <label>Vínculo<select name="tipo" id="novo-tipo"><option value="morador">Morador</option><option value="proprietario">Proprietário</option><option value="inquilino">Inquilino</option><option value="outro">Outro</option></select></label>
@@ -61,8 +63,8 @@
     <details class="card">
       <summary>Importar lista de moradores</summary>
       <form class="campos" method="post" action="/moradores/importar">
-        <p class="small muted">Uma linha por morador, separando com ponto e vírgula: <code>nome; telefone; bloco; apartamento; e-mail</code>. Pode colar direto de uma planilha. Telefones já cadastrados são atualizados.</p>
-        <textarea name="lista" id="lista" placeholder="Carla Mendes; 11999998888; B; 304; carla@email.com"></textarea>
+        <p class="small muted">Uma linha por morador, separando com ponto e vírgula: <code>nome; telefone; bloco; apartamento; e-mail; vaga</code>. Pode colar direto de uma planilha. E-mail e vaga são opcionais. Telefones já cadastrados são atualizados.</p>
+        <textarea name="lista" id="lista" placeholder="Carla Mendes; 11999998888; B; 304; carla@email.com; 12"></textarea>
         <button class="btn sec" type="submit">Importar</button>
       </form>
     </details>

@@ -5,34 +5,69 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title><%= titulo %> · <%= cfg.nome_predio %></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/static/estilo.css">
-<script src="/static/app.js" defer></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/static/estilo.css?v=2">
+<script src="/static/app.js?v=2" defer></script>
 </head>
-<body>
+<body class="<%= usuario ? 'com-menu' : 'sem-menu' %>">
 <% if (usuario) {
-  const menus = {
-    admin: [['/', 'Início'], ['/whatsapp', 'WhatsApp'], ['/moradores', 'Moradores'], ['/chamados', 'Chamados'], ['/reclamacoes', 'Reclamações'], ['/avisos', 'Avisos'], ['/agenda', 'Agenda'], ['/manutencoes', 'Manutenção'], ['/documentos', 'Documentos'], ['/radar', 'Radar do grupo'], ['/relatorio', 'Relatório'], ['/equipe', 'Equipe'], ['/configuracoes', 'Configurações']],
-    zelador: [['/chamados', 'Chamados']],
-    portaria: [['/reclamacoes', 'Reclamações']],
-    conselho: [['/relatorio', 'Relatório'], ['/radar', 'Radar do grupo']],
-  };
+  // Menu separado em: dia a dia (Operação), gestão do prédio (Administração) e ajustes (Configuração)
+  const grupos = {
+    admin: [
+      ['Operação', [['/', 'inicio', 'Início'], ['/chamados', 'chamados', 'Chamados', contadores.chamados], ['/reclamacoes', 'reclamacoes', 'Reclamações', contadores.reclamacoes], ['/avisos', 'avisos', 'Avisos'], ['/agenda', 'agenda', 'Agenda']]],
+      ['Administração', [['/moradores', 'moradores', 'Moradores'], ['/manutencoes', 'manutencao', 'Manutenção'], ['/radar', 'radar', 'Radar do grupo'], ['/relatorio', 'relatorio', 'Relatório']]],
+      ['Configuração', [['/whatsapp', 'whatsapp', 'WhatsApp'], ['/documentos', 'documentos', 'Documentos'], ['/equipe', 'equipe', 'Equipe e acessos'], ['/configuracoes', 'configuracoes', 'Ajustes do prédio']]],
+    ],
+    zelador: [['Operação', [['/chamados', 'chamados', 'Chamados', contadores.chamados]]]],
+    portaria: [['Operação', [['/reclamacoes', 'reclamacoes', 'Reclamações', contadores.reclamacoes]]]],
+    conselho: [['Acompanhamento', [['/relatorio', 'relatorio', 'Relatório'], ['/radar', 'radar', 'Radar do grupo']]]],
+  }[usuario.perfil] || [];
+  const ativo = (href) => href === '/' ? caminho === '/' : (caminho === href || caminho.startsWith(href + '/') || (href === '/whatsapp' && caminho.startsWith('/whatsapp')));
+  let secaoAtual = '';
+  for (const [g, itens] of grupos) for (const it of itens) if (ativo(it[0])) secaoAtual = g;
   const perfis = { admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' };
+  const iniciais = usuario.nome.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 %>
-<header class="topo"><div class="linha">
-  <div class="marca"><%= cfg.nome_predio %><small>Assistente do condomínio</small></div>
-  <nav class="nav">
-    <% for (const [href, nome] of menus[usuario.perfil] || []) { %>
-      <a href="<%= href %>" class="<%= (href === '/' ? caminho === '/' : caminho.startsWith(href)) ? 'ativo' : '' %>"><%= nome %></a>
-    <% } %>
-  </nav>
-  <div class="quem"><span><%= usuario.nome %> · <%= perfis[usuario.perfil] %></span>
-    <form method="post" action="/sair" class="inline"><button type="submit">Sair</button></form>
-  </div>
-</div></header>
+<div class="app">
+  <aside class="lateral" id="lateral">
+    <div class="lateral-marca">
+      <span class="logo"><%- icone('predio') %></span>
+      <div><b><%= cfg.nome_predio %></b><small>Assistente do condomínio</small></div>
+      <button class="so-celular icone-btn" type="button" data-fechar-menu aria-label="Fechar menu"><%- icone('fechar') %></button>
+    </div>
+    <nav class="lateral-nav">
+      <% for (const [grupo, itens] of grupos) { %>
+        <div class="grupo">
+          <span class="grupo-titulo"><%= grupo %></span>
+          <% for (const [href, ic, nome, num] of itens) { %>
+            <a href="<%= href %>" class="<%= ativo(href) ? 'ativo' : '' %>" <%= ativo(href) ? 'aria-current=page' : '' %>>
+              <%- icone(ic) %><span><%= nome %></span>
+              <% if (num) { %><em class="contador"><%= num > 99 ? '99+' : num %></em><% } %>
+            </a>
+          <% } %>
+        </div>
+      <% } %>
+    </nav>
+    <div class="lateral-usuario">
+      <span class="avatar"><%= iniciais %></span>
+      <div><b><%= usuario.nome %></b><small><%= perfis[usuario.perfil] %></small></div>
+      <form method="post" action="/sair"><button class="icone-btn" type="submit" title="Sair" aria-label="Sair"><%- icone('sair') %></button></form>
+    </div>
+  </aside>
+  <div class="veu" data-fechar-menu></div>
+
+  <div class="conteudo">
+    <header class="barra">
+      <button class="so-celular icone-btn" type="button" id="abrir-menu" aria-label="Abrir menu"><%- icone('menu') %></button>
+      <div class="trilha"><% if (secaoAtual) { %><span><%= secaoAtual %></span><i>/</i><% } %><b><%= titulo %></b></div>
+      <span class="barra-data"><%= u.dataExtenso(new Date().toISOString()).split(' às')[0] %></span>
+    </header>
+    <main>
+<% } else { %>
+    <main class="publico">
 <% } %>
-<main>
 <% if (usuario && usuario.perfil === 'admin' && faltando.length) { %>
-  <div class="alerta">Configuração incompleta no servidor. Faltam as variáveis: <code><%= faltando.join(', ') %></code>. O assistente e as rotinas automáticas só funcionam depois disso.</div>
+  <div class="alerta">Configuração incompleta no servidor. Faltam as variáveis <code><%= faltando.join(', ') %></code>. O assistente e as rotinas automáticas só funcionam depois disso.</div>
 <% } %>
-<% if (aviso) { %><div class="flash <%= aviso.tipo === 'erro' ? 'erro' : '' %>"><%= aviso.texto %></div><% } %>
+<% if (aviso) { %><div class="flash <%= aviso.tipo === 'erro' ? 'erro' : '' %>" role="status"><%= aviso.texto %></div><% } %>

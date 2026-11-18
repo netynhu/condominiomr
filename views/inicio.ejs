@@ -16,7 +16,7 @@
 <div class="grade2">
   <div class="card">
     <div class="acoes" style="justify-content:space-between">
-      <h2>Resumo do dia pela IA</h2>
+      <div class="acoes"><h2>Resumo do dia</h2><span class="selo-ia"><%- icone('ia') %>IA</span></div>
       <button class="btn peq" type="button" id="btn-resumo">Gerar resumo agora</button>
     </div>
     <div class="ia" id="resumo"><%= resumo || 'Clique em "Gerar resumo agora". A IA lê chamados, reclamações, agenda, manutenções e o grupo, e diz o que fazer primeiro.' %></div>
@@ -25,7 +25,7 @@
 
   <div style="display:flex;flex-direction:column;gap:16px">
     <div class="card">
-      <h2>Pergunte aos dados</h2>
+      <div class="acoes"><h2>Pergunte aos dados</h2><span class="selo-ia"><%- icone('ia') %>IA</span></div>
       <form class="campos" id="form-pergunta">
         <input name="pergunta" id="pergunta" placeholder="Ex.: quantas reclamações de barulho no bloco B este mês?" required>
         <button class="btn sec" type="submit" id="btn-pergunta">Perguntar</button>

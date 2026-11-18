@@ -32,6 +32,7 @@ create table if not exists moradores (
   nome text not null,
   telefone text not null unique,          -- só dígitos, com DDI: 5511999998888
   email text,
+  vaga text,                              -- número da vaga de garagem (ex.: "12" ou "12, 13")
   tipo text not null default 'morador' check (tipo in ('proprietario','inquilino','morador','outro')),
   ativo boolean not null default true,
   aceita_avisos boolean not null default true,

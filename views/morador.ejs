@@ -1,6 +1,6 @@
 <%- include('partials/topo') %>
 <div class="cabeca">
-  <div><h1><%= m.nome %></h1><p class="muted"><%= u.rotuloUnidade(m.unidade) %> · <%= u.formatarTelefone(m.telefone) %></p></div>
+  <div><h1><%= m.nome %></h1><p class="muted"><%= u.rotuloUnidade(m.unidade) %><%= m.vaga ? ` · vaga ${m.vaga}` : '' %> · <%= u.formatarTelefone(m.telefone) %></p></div>
   <a class="btn sec" href="/moradores">Voltar</a>
 </div>
 
@@ -50,6 +50,7 @@
       <div class="linha-campos">
         <label>Bloco<input name="bloco" id="bloco" value="<%= m.unidade ? m.unidade.bloco : '' %>"></label>
         <label>Apartamento<input name="numero" id="numero" value="<%= m.unidade ? m.unidade.numero : '' %>"></label>
+        <label>Vaga<input name="vaga" id="vaga" value="<%= m.vaga || '' %>" placeholder="12"></label>
       </div>
       <div class="linha-campos">
         <label>Vínculo<select name="tipo" id="tipo">

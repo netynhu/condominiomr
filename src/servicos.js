@@ -74,7 +74,20 @@ async function mudarStatusChamado(id, status, observacao, usuarioNome) {
 // Compara unidades ignorando letras e espaços ("209", "apto 209", "B-209")
 const chaveUnidade = (s) => soDigitos(s) || String(s || '').trim().toLowerCase();
 
-async function registrarReclamacao({ morador, tipo, unidade_alvo, descricao, acontecendo_agora }) {
+// Descobre a unidade dona de uma vaga ("12" encontra quem tem "12" ou "12, 13")
+async function unidadeDaVaga(vaga) {
+  const alvo = String(vaga || '').trim().toLowerCase();
+  if (!alvo) return null;
+  const lista = ok(await db.from('moradores').select('vaga, unidade:unidades(bloco, numero)').not('vaga', 'is', null));
+  const dono = lista.find((m) => m.unidade && m.vaga.toLowerCase().split(/\s+e\s+|[\s,;/]+/).filter(Boolean).includes(alvo));
+  return dono ? (dono.unidade.bloco ? `${dono.unidade.bloco}-${dono.unidade.numero}` : dono.unidade.numero) : null;
+}
+
+async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, descricao, acontecendo_agora }) {
+  if (vaga_alvo) {
+    descricao = `${descricao} [vaga ${vaga_alvo}]`;
+    if (!unidade_alvo) unidade_alvo = await unidadeDaVaga(vaga_alvo);
+  }
   const r = ok(await db.from('reclamacoes').insert({
     autor_morador_id: morador?.id || null, tipo, unidade_alvo: unidade_alvo || null, descricao, acontecendo_agora: !!acontecendo_agora,
   }).select().single());
@@ -122,5 +135,5 @@ async function enfileirar(publico, texto, avisoId) {
 
 module.exports = {
   acharMorador, enviar, avisarEquipe, abrirChamado, mudarStatusChamado, registrarReclamacao,
-  registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, ROTULO_STATUS,
+  registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, ROTULO_STATUS,
 };
