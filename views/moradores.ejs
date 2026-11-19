@@ -6,25 +6,16 @@
 
 <% if (pendentes.length) { %>
 <div class="card" id="pendentes" style="border-color:var(--warn)">
-  <h2>Pedidos de cadastro pelo WhatsApp</h2>
-  <p class="small muted">Pessoas que escreveram e ainda não são moradores. Confira se a pessoa mora mesmo no prédio antes de aprovar. Ao aprovar, ela recebe a confirmação no WhatsApp.</p>
+  <h2>Números que escreveram e não têm cadastro</h2>
+  <p class="small muted">O assistente respondeu que o canal é só para moradores e pediu para procurar a administração. Se for morador, cadastre: o telefone já vem preenchido e a pessoa recebe as boas-vindas com o botão do grupo.</p>
   <div class="lista">
-    <% for (const p of pendentes) { const d = p.dados || {}; const completo = d.etapa === 'aguardando' && d.apartamento;
-       const vinc = { proprietario: 'proprietário', inquilino: 'inquilino', outro: 'outro vínculo' }[d.vinculo] || ''; %>
+    <% for (const p of pendentes) { %>
       <div class="item">
-        <div>
-          <b><%= d.nome || p.nome_whatsapp || 'Sem nome' %></b>
-          <% if (completo) { %><span class="tag alta">aguardando aprovação</span><% } else if (d.etapa === 'nao_morador') { %><span class="tag">disse que não é morador</span><% } else { %><span class="tag">cadastro incompleto</span><% } %>
-          <div class="small"><%= u.formatarTelefone(p.telefone) %><%= d.apartamento ? ` · ${d.bloco ? 'bloco ' + d.bloco + ', ' : ''}apto ${d.apartamento}` : '' %><%= vinc ? ' · ' + vinc : '' %></div>
-          <div class="small muted">Última mensagem: "<%= p.ultima_mensagem %>" · <%= u.dataHora(p.atualizado_em) %></div>
-        </div>
+        <div><b><%= p.nome_whatsapp || 'Sem nome no WhatsApp' %></b>
+          <div class="small"><%= u.formatarTelefone(p.telefone) %></div>
+          <div class="small muted">Última mensagem: "<%= p.ultima_mensagem %>" · <%= p.vezes %> mensagem(ns) · <%= u.dataHora(p.atualizado_em) %></div></div>
         <div class="acoes">
-          <% if (completo) { %>
-            <form method="post" action="/pendentes/<%= p.telefone %>/aprovar" data-confirmar="Aprovar o cadastro de <%= d.nome %>? A pessoa passa a ser atendida como moradora."><button class="btn peq" type="submit">Aprovar</button></form>
-          <% } else { %>
-            <a class="btn sec peq" href="/moradores?telefone=<%= p.telefone %>&nome=<%= encodeURIComponent(d.nome || p.nome_whatsapp || '') %>#novo">Cadastrar à mão</a>
-          <% } %>
-          <form method="post" action="/pendentes/<%= p.telefone %>/recusar" data-confirmar="Recusar este pedido? A pessoa recebe uma mensagem dizendo que o cadastro não foi confirmado."><button class="btn perigo peq" type="submit">Recusar</button></form>
+          <a class="btn peq" href="/moradores?telefone=<%= p.telefone %>&nome=<%= encodeURIComponent(p.nome_whatsapp || '') %>#novo">Cadastrar</a>
           <form method="post" action="/pendentes/<%= p.telefone %>/ignorar"><button class="btn sec peq" type="submit">Ignorar</button></form>
         </div>
       </div>

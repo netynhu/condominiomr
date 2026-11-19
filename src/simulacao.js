@@ -28,7 +28,7 @@ async function adminDaSimulacao() {
 }
 
 function menu(moradores) {
-  return `🧪 *Modo simulação*\nVocê troca de identidade mandando um comando:\n${moradores.map((m, i) => `#${i + 1}  ${m.nome} (${rotuloUnidade(m.unidade)})`).join('\n')}\n#novo  Pessoa que ainda não é morador (testa o pedido de cadastro)\n#sindico  Administração (comandos de aviso, agenda, chamados)\n#quem  mostra quem você é agora\n\nTudo que o sistema enviaria para moradores, zelador ou síndico chega aqui, com a etiqueta de quem receberia.`;
+  return `🧪 *Modo simulação*\nVocê troca de identidade mandando um comando:\n${moradores.map((m, i) => `#${i + 1}  ${m.nome} (${rotuloUnidade(m.unidade)})`).join('\n')}\n#novo  Pessoa que ainda não é morador (testa a resposta a quem não tem cadastro)\n#sindico  Administração (comandos de aviso, agenda, chamados)\n#quem  mostra quem você é agora\n\nTudo que o sistema enviaria para moradores, zelador ou síndico chega aqui, com a etiqueta de quem receberia.`;
 }
 
 // Trata comandos "#..." e diz para quem a mensagem vai. Retorna { resposta } para comandos,
@@ -54,7 +54,7 @@ async function rotear(texto) {
       await db.from('contatos_pendentes').delete().eq('telefone', NOVO);
       await db.from('moradores').delete().eq('telefone', NOVO);
       await setConfig({ simulacao_persona: 'novo' });
-      return { resposta: '🧪 Agora você é *uma pessoa que ainda não é morador*. Mande qualquer mensagem para ver o pedido de cadastro. O pedido de aprovação chega aqui como síndico.' };
+      return { resposta: '🧪 Agora você é *uma pessoa que ainda não é morador*. Mande qualquer mensagem para ver a resposta a quem não é morador. Depois, cadastre essa pessoa no painel (ela aparece em Moradores > Números sem cadastro).' };
     }
     if (cmd === '#quem') {
       if (sim.persona === 'sindico') return { resposta: '🧪 Você está como *administração*.' };

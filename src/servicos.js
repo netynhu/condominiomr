@@ -196,25 +196,6 @@ async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, des
   return { ...r, reincidencia };
 }
 
-// Aprova um pedido de cadastro feito pelo WhatsApp: cria o morador e avisa a pessoa
-async function aprovarCadastro(telefone, ajustes = {}) {
-  const tel = normalizarTelefone(telefone);
-  const p = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
-  if (!p) throw new Error('Pedido de cadastro não encontrado.');
-  const d = { ...(p.dados || {}), ...ajustes };
-  const nome = d.nome || p.nome_whatsapp;
-  if (!nome || !d.apartamento) throw new Error('O pedido ainda não tem nome e apartamento.');
-  const bloco = String(d.bloco || '').trim().toUpperCase();
-  const numero = String(d.apartamento).trim();
-  let [u] = ok(await db.from('unidades').select('id').eq('bloco', bloco).eq('numero', numero).limit(1));
-  if (!u) u = ok(await db.from('unidades').insert({ bloco, numero }).select('id').single());
-  const tipo = ['proprietario', 'inquilino'].includes(d.vinculo) ? d.vinculo : 'morador';
-  const m = ok(await db.from('moradores').upsert({ nome, telefone: tel, tipo, unidade_id: u.id, ativo: true }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single());
-  await db.from('contatos_pendentes').delete().eq('telefone', tel);
-  await boasVindas(m, '✅ Cadastro aprovado');
-  return m;
-}
-
 const textoBoasVindas = (m, cfg, titulo) => `${titulo ? `${titulo}, ` : 'Olá, '}${primeiroNome(m.nome)}! Você foi cadastrado(a) no assistente do ${cfg.nome_predio}${m.unidade ? ` (${rotuloUnidade(m.unidade)})` : ''}.\n\nPor aqui você abre chamados de manutenção, faz reclamações sem se expor, tira dúvidas sobre as regras e fica sabendo dos eventos e obras. Pode mandar texto, áudio, foto ou vídeo.`;
 
 // Mensagem de boas-vindas ao morador recém-cadastrado, com o botão para entrar no grupo dos moradores
@@ -235,12 +216,6 @@ async function boasVindasEmFila(moradores) {
   const linhas = moradores.map((m) => ({ telefone: m.telefone, texto: `${textoBoasVindas(m, cfg)}${cfg.grupo_convite ? `\n\n👥 Grupo dos moradores: ${cfg.grupo_convite}` : ''}` }));
   for (let i = 0; i < linhas.length; i += 500) ok(await db.from('fila_envio').insert(linhas.slice(i, i + 500)));
   return linhas.length;
-}
-
-async function recusarCadastro(telefone, avisar = true) {
-  const tel = normalizarTelefone(telefone);
-  await db.from('contatos_pendentes').delete().eq('telefone', tel);
-  if (avisar) await enviar(tel, 'Não conseguimos confirmar seu cadastro como morador. Se houver algum engano, procure a administração do prédio.');
 }
 
 // Lista de destinatários de um aviso: "todos" ou "bloco:B"
@@ -269,6 +244,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, enviar, enviarBotoes, avisarEquipe, aprovarCadastro, recusarCadastro, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, enviar, enviarBotoes, avisarEquipe, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

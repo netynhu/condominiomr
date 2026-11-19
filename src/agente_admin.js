@@ -89,14 +89,9 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: {} },
   },
   {
-    name: 'listar_pedidos_cadastro',
-    description: 'Lista os pedidos de cadastro feitos pelo WhatsApp por pessoas que ainda não são moradores.',
+    name: 'listar_numeros_sem_cadastro',
+    description: 'Lista os números que escreveram para o assistente e não são moradores cadastrados.',
     parameters: { type: 'object', properties: {} },
-  },
-  {
-    name: 'decidir_pedido_cadastro',
-    description: 'Aprova ou recusa um pedido de cadastro feito pelo WhatsApp. Aprovar cria o morador e avisa a pessoa.',
-    parameters: { type: 'object', properties: { telefone: { type: 'string' }, decisao: { type: 'string', enum: ['aprovar', 'recusar'] } }, required: ['telefone', 'decisao'] },
   },
   {
     name: 'cadastrar_morador',
@@ -182,14 +177,9 @@ async function executar(nome, args, ctx) {
       const l = ok(await db.from('reclamacoes').select('id, tipo, unidade_alvo, descricao, status, criado_em').in('status', ['nova', 'em_tratamento']).order('criado_em', { ascending: false }).limit(20));
       return l.map((r) => ({ numero: r.id, tipo: r.tipo, unidade: r.unidade_alvo, status: r.status, quando: dataHora(r.criado_em), descricao: r.descricao.slice(0, 200) }));
     }
-    case 'listar_pedidos_cadastro': {
-      const l = ok(await db.from('contatos_pendentes').select('*').order('atualizado_em', { ascending: false }).limit(20));
-      return l.map((p) => ({ telefone: p.telefone, nome: p.dados?.nome || p.nome_whatsapp, bloco: p.dados?.bloco, apartamento: p.dados?.apartamento, vinculo: p.dados?.vinculo, situacao: p.dados?.etapa === 'aguardando' ? 'completo, aguardando aprovação' : 'incompleto' }));
-    }
-    case 'decidir_pedido_cadastro': {
-      if (args.decisao === 'recusar') { await sv.recusarCadastro(args.telefone); return { ok: true, recusado: args.telefone }; }
-      const m = await sv.aprovarCadastro(args.telefone);
-      return { ok: true, aprovado: m.nome, unidade: m.unidade ? `${m.unidade.bloco ? m.unidade.bloco + '-' : ''}${m.unidade.numero}` : '', avisado_no_whatsapp: true };
+    case 'listar_numeros_sem_cadastro': {
+      const l = ok(await db.from('contatos_pendentes').select('telefone, nome_whatsapp, ultima_mensagem, vezes, atualizado_em').order('atualizado_em', { ascending: false }).limit(20));
+      return l.map((p) => ({ telefone: p.telefone, nome_no_whatsapp: p.nome_whatsapp, ultima_mensagem: p.ultima_mensagem, mensagens: p.vezes, quando: dataHora(p.atualizado_em) }));
     }
     case 'cadastrar_morador': {
       const telefone = normalizarTelefone(args.telefone);
@@ -211,11 +201,12 @@ async function executar(nome, args, ctx) {
   }
 }
 
-async function sistema(admin) {
+async function sistema(admin, canal = 'whatsapp') {
   const cfg = await getConfig();
   return `Você é o assistente da administração do ${cfg.nome_predio}. Quem fala com você é ${admin.nome}, da administração (síndico/gestão), não um morador.
 Hoje: ${hojeParaIA()}. Use isso para entender "amanhã", "terça", "dia 25" (sempre a próxima ocorrência a partir de hoje, no ano certo). Ao confirmar, escreva a data por extenso com o dia da semana.
 Grupo dos moradores configurado: ${cfg.grupo_nome || 'nenhum'}.
+${canal === 'painel' ? 'Você está na tela Assistente do painel (sistema logado): pode cadastrar moradores.' : 'Você está no WhatsApp. Cadastro de moradores NÃO é feito por aqui: se pedirem, explique que o cadastro é só no painel, na página Moradores ou na tela Assistente.'}
 
 COMO TRABALHAR
 - Respostas curtas, próprias de WhatsApp. Sem markdown pesado.
@@ -233,11 +224,12 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
   const anteriores = ok(await db.from('mensagens').select('direcao, texto').eq('telefone', canal).order('criado_em', { ascending: false }).limit(HISTORICO + 1)).reverse();
   if (anteriores.length && anteriores[anteriores.length - 1].direcao === 'entrada') anteriores.pop();
   const mensagens = [
-    { role: 'system', content: await sistema(admin) },
+    { role: 'system', content: await sistema(admin, ctx.canal) },
     ...anteriores.map((m) => ({ role: m.direcao === 'entrada' ? 'user' : 'assistant', content: m.texto })),
     { role: 'user', content: texto },
   ];
-  const tools = FERRAMENTAS.map((f) => ({ type: 'function', function: f }));
+  const SO_NO_PAINEL = ['cadastrar_morador', 'listar_numeros_sem_cadastro'];
+  const tools = FERRAMENTAS.filter((f) => ctx.canal === 'painel' || !SO_NO_PAINEL.includes(f.name)).map((f) => ({ type: 'function', function: f }));
   for (let volta = 0; volta < 8; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.2 });
     const msg = r.choices[0].message;
@@ -275,7 +267,7 @@ async function atenderAdminWhatsApp(admin, tel, texto) {
 async function atenderAdminPainel(usuario, texto) {
   const canal = `painel-${usuario.id}`;
   ok(await db.from('mensagens').insert({ telefone: canal, direcao: 'entrada', texto }));
-  const resposta = await responderAdmin({ ...usuario }, canal, texto);
+  const resposta = await responderAdmin({ ...usuario }, canal, texto, { admin: { ...usuario }, canal: 'painel' });
   ok(await db.from('mensagens').insert({ telefone: canal, direcao: 'saida', texto: resposta }));
   return resposta;
 }
