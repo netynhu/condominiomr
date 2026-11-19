@@ -61,7 +61,11 @@ async function tratarWebhook(body) {
   if (!ev.telefone) return;
   // Simulação ligada: só a conversa do dono consigo mesmo é atendida. Qualquer outra conversa
   // privada (clientes, amigos) é ignorada, para o assistente não responder no WhatsApp pessoal.
-  if (sim.ativa && !ev.proprio) return;
+  // Simulação ligada: atende a conversa consigo mesmo e os números de teste; o resto é ignorado
+  if (sim.ativa && !ev.proprio && !simulacao.ehNumeroDeTeste(ev.telefone, sim)) {
+    console.log('[simulação] mensagem de número fora da simulação ignorada. Para testar com ele, coloque em Ajustes > Números de teste:', ev.telefone);
+    return;
+  }
   // Mensagem do próprio número só vale na conversa consigo mesmo (o chat é o WhatsApp da simulação)
   if (ev.proprio && !simulacao.ehTelefoneDaSimulacao(ev.telefone, sim)) {
     if (sim.ativa) console.log('[simulação] mensagem própria em outra conversa ignorada:', ev.telefone);

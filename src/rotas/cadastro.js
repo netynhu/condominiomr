@@ -198,6 +198,7 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
   v.simulacao_ativa = req.body.simulacao_ativa === 'on' ? '1' : '0';
   v.simulacao_telefone = normalizarTelefone(req.body.simulacao_telefone);
+  v.simulacao_numeros_teste = String(req.body.simulacao_numeros_teste || '').split(/[,;\n]+/).map(normalizarTelefone).filter((t) => t.length >= 12).join(', ');
   await setConfig(v);
   avisar(req, 'Configurações salvas.');
   res.redirect('/configuracoes');

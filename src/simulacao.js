@@ -12,10 +12,13 @@ const ehFicticio = (tel) => FICTICIO.test(String(tel || ''));
 
 async function config() {
   const cfg = await getConfig();
-  return { ativa: cfg.simulacao_ativa === '1' && !!cfg.simulacao_telefone, telefone: cfg.simulacao_telefone || '', persona: cfg.simulacao_persona || 'morador:1' };
+  const testes = String(cfg.simulacao_numeros_teste || '').split(/[,;\s]+/).map((t) => t.replace(/\D/g, '')).filter((t) => t.length >= 10);
+  return { ativa: cfg.simulacao_ativa === '1' && !!cfg.simulacao_telefone, telefone: cfg.simulacao_telefone || '', persona: cfg.simulacao_persona || 'morador:1', testes };
 }
 
 const ehTelefoneDaSimulacao = (tel, sim) => sim.ativa && variantesTelefone(tel).includes(sim.telefone);
+// Outros celulares de teste: atendidos normalmente mesmo com a simulação ligada
+const ehNumeroDeTeste = (tel, sim) => sim.ativa && variantesTelefone(tel).some((v) => sim.testes.some((t) => variantesTelefone(t).includes(v)));
 
 async function moradoresFicticios() {
   const l = ok(await db.from('moradores').select('*, unidade:unidades(*)').like('telefone', '5500000000%').order('telefone'));
@@ -90,4 +93,4 @@ async function destino(numero) {
   return { numero: sim.telefone, etiqueta: m ? `*[→ ${primeiroNome(m.nome)} · ${rotuloUnidade(m.unidade)}]*\n` : '*[→ morador fictício]*\n' };
 }
 
-module.exports = { config, ehFicticio, ehTelefoneDaSimulacao, rotear, moradorAtual, destino, moradoresFicticios };
+module.exports = { config, ehFicticio, ehTelefoneDaSimulacao, ehNumeroDeTeste, rotear, moradorAtual, destino, moradoresFicticios };
