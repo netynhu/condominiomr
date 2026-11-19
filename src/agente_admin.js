@@ -241,7 +241,7 @@ async function atenderAdminWhatsApp(admin, tel, texto) {
     console.error('[admin] erro', e.message);
     resposta = 'Tive um problema técnico para executar. Tente de novo ou use o painel.';
   }
-  if (resposta) await sv.enviar(tel, resposta);
+  if (resposta) await sv.enviar(tel, resposta, null, 'você, como síndico');
 }
 
 // Mensagem da administração pela tela "Assistente" do painel

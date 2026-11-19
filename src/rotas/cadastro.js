@@ -178,6 +178,8 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
+  v.simulacao_ativa = req.body.simulacao_ativa === 'on' ? '1' : '0';
+  v.simulacao_telefone = normalizarTelefone(req.body.simulacao_telefone);
   await setConfig(v);
   avisar(req, 'Configurações salvas.');
   res.redirect('/configuracoes');

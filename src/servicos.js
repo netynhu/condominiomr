@@ -13,11 +13,18 @@ async function acharMorador(telefone) {
 }
 
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
-async function enviar(telefone, texto, moradorId) {
+// rotulo: para quem é a mensagem (zelador, síndico...). Na simulação, tudo chega no mesmo celular,
+// então a mensagem ganha uma etiqueta para saber quem a receberia.
+async function enviar(telefone, texto, moradorId, rotulo) {
   const tel = normalizarTelefone(telefone);
   if (!tel) return false;
   try {
-    const r = await uazapi.enviarTexto(tel, texto);
+    let final = texto;
+    if (rotulo) {
+      const simulacao = require('./simulacao');
+      if (simulacao.ehTelefoneDaSimulacao(tel, await simulacao.config())) final = `*[→ ${rotulo}]*\n${texto}`;
+    }
+    const r = await uazapi.enviarTexto(tel, final);
     await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto, wa_id: uazapi.idEnviado(r) });
     return true;
   } catch (e) {
@@ -31,7 +38,7 @@ async function avisarEquipe(papel, texto) {
   const cfg = await getConfig();
   const tel = cfg[`telefone_${papel}`];
   if (!tel) return false;
-  return enviar(tel, texto);
+  return enviar(tel, texto, null, papel === 'sindico' ? 'síndico' : papel);
 }
 
 // Todos os telefones de zelador: o do painel de ajustes e os dos usuários com perfil zelador
@@ -72,7 +79,7 @@ async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'n
   if (origem !== 'zelador') {
     const link = env.APP_URL ? `\n\n👉 Toque para abrir: ${env.APP_URL}/z/${ch.id}` : '';
     const anexos = [foto && '📷 Tem foto', video && '🎥 Tem vídeo'].filter(Boolean).join(' · ');
-    for (const tel of await telefonesZeladores()) await enviar(tel, `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}${link}`);
+    for (const tel of await telefonesZeladores()) await enviar(tel, `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}${link}`, null, 'zelador');
   }
   if (prioridade === 'urgente' || (prioridade === 'alta' && foraDoHorario())) {
     await avisarEquipe('sindico', `${EMOJI_PRIORIDADE[prioridade]} ${corpo}`);

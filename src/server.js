@@ -8,6 +8,7 @@ const util = require('./util');
 const uazapi = require('./uazapi');
 const agente = require('./agente');
 const rotinas = require('./rotinas');
+const simulacao = require('./simulacao');
 const { db } = require('./db');
 
 const app = express();
@@ -34,18 +35,29 @@ async function tratarWebhook(body) {
   }
   if (ev.tipo !== 'mensagem') return;
 
+  const sim = await simulacao.config();
+
   if (ev.ehGrupo) {
     const cfg = await getConfig();
     if (!cfg.grupo_jid || ev.chatid !== cfg.grupo_jid || !ev.texto) return;
     const { acharMorador } = require('./servicos');
-    const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
-    await db.from('grupo_mensagens').insert({ telefone: ev.telefone || null, nome: ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
+    let morador = null;
+    if (ev.proprio) {
+      // Mensagem do dono do número no grupo: na simulação, conta como o morador que ele está representando
+      if (!sim.ativa) return;
+      morador = await simulacao.moradorAtual();
+    } else if (ev.telefone) morador = await acharMorador(ev.telefone);
+    await db.from('grupo_mensagens').insert({ telefone: morador?.telefone || ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
     // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
     if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, ev.texto);
     return;
   }
 
   if (!ev.telefone) return;
+  // Simulação ligada: só a conversa do dono consigo mesmo é atendida. Qualquer outra conversa
+  // privada (clientes, amigos) é ignorada, para o assistente não responder no WhatsApp pessoal.
+  if (sim.ativa && !ev.proprio) return;
+  if (!sim.ativa && ev.proprio) return;
   await agente.receberMensagemPrivada(ev);
 }
 

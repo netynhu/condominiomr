@@ -368,14 +368,23 @@ async function processar(tel) {
   if (!texto) return;
 
   return emSequencia(tel, async () => {
-    // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
-    const admin = await require('./agente_admin').acharAdmin(tel);
-    if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
-
-    const morador = await sv.acharMorador(tel);
+    // Simulação: o mesmo número faz o papel de vários moradores e do síndico (#1..#5, #sindico)
+    const simulacao = require('./simulacao');
+    let morador;
+    if (simulacao.ehTelefoneDaSimulacao(tel, await simulacao.config())) {
+      const r = await simulacao.rotear(texto);
+      if (r.resposta) { await require('./uazapi').enviarTexto(tel, r.resposta); return; }
+      if (r.admin) return require('./agente_admin').atenderAdminWhatsApp(r.admin, tel, texto);
+      morador = r.morador;
+    } else {
+      // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
+      const admin = await require('./agente_admin').acharAdmin(tel);
+      if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
+      morador = await sv.acharMorador(tel);
+    }
     if (!morador || !morador.ativo) return atenderNaoCadastrado(tel, b.nome, texto);
 
-    const limite = dentroDoLimite(tel);
+    const limite = require('./simulacao').ehFicticio(morador.telefone) ? { ok: true } : dentroDoLimite(tel);
     if (!limite.ok) {
       if (limite.primeiraVezAcima) await sv.enviar(tel, 'Recebi muitas mensagens em pouco tempo. Vou pausar as respostas automáticas por alguns minutos. Se for urgente, fale com a portaria.', morador.id);
       return;

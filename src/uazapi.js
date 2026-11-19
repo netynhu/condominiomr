@@ -83,26 +83,47 @@ async function listarGrupos() {
 }
 
 // Envia texto para uma pessoa. Nunca escreve em grupo: o assistente só lê o grupo.
+// Mensagens enviadas há pouco: evita que, na conversa consigo mesmo (simulação), o sistema leia a própria resposta
+const enviadasRecentes = new Map(); // chave (id ou texto) -> hora
+function lembrarEnvio(json, texto) {
+  const agora = Date.now();
+  for (const [k, t] of enviadasRecentes) if (agora - t > 10 * 60000) enviadasRecentes.delete(k);
+  const id = idEnviado(json);
+  if (id) enviadasRecentes.set('id:' + id, agora);
+  if (texto) enviadasRecentes.set('tx:' + String(texto).trim(), agora);
+}
+const foiEnviadaPeloSistema = (id, texto) => enviadasRecentes.has('id:' + id) || (texto && enviadasRecentes.has('tx:' + String(texto).trim()));
+
 async function enviarTexto(numero, texto, { digitando = true } = {}) {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us') || alvo.includes('@newsletter')) {
     throw new Error('Envio bloqueado: o assistente só envia mensagens privadas.');
   }
-  const delay = digitando ? Math.min(4000, 800 + texto.length * 15) : 0;
-  return chamar('/send/text', { method: 'POST', body: { number: soDigitos(alvo), text: texto, delay } });
+  // Morador fictício (simulação): a mensagem vai para o telefone da simulação, com etiqueta
+  const { numero: real, etiqueta } = await require('./simulacao').destino(soDigitos(alvo));
+  const final = etiqueta + texto;
+  const delay = digitando ? Math.min(4000, 800 + final.length * 15) : 0;
+  const json = await chamar('/send/text', { method: 'POST', body: { number: real, text: final, delay } });
+  lembrarEnvio(json, final);
+  return json;
 }
 
 // Envia uma foto (buffer) com legenda para uma pessoa
 async function enviarFoto(numero, buffer, legenda = '') {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: fotos só no privado.');
-  return chamar('/send/media', { method: 'POST', body: { number: soDigitos(alvo), type: 'image', file: buffer.toString('base64'), text: legenda } });
+  const { numero: real, etiqueta } = await require('./simulacao').destino(soDigitos(alvo));
+  const json = await chamar('/send/media', { method: 'POST', body: { number: real, type: 'image', file: buffer.toString('base64'), text: etiqueta + legenda } });
+  lembrarEnvio(json, etiqueta + legenda);
+  return json;
 }
 
 // Posta no grupo dos moradores. Só aceita o grupo configurado no painel.
 async function enviarNoGrupo(grupoJid, texto) {
   if (!grupoJid || !grupoJid.endsWith('@g.us')) throw new Error('Nenhum grupo dos moradores configurado.');
-  return chamar('/send/text', { method: 'POST', body: { number: grupoJid, text: texto, delay: 1500 } });
+  const json = await chamar('/send/text', { method: 'POST', body: { number: grupoJid, text: texto, delay: 1500 } });
+  lembrarEnvio(json, texto);
+  return json;
 }
 
 // Baixa a mídia de uma mensagem recebida (áudio vem em MP3).
@@ -155,13 +176,25 @@ function lerWebhook(body) {
   }
   if (tipo !== 'messages') return { tipo: 'outro', bruto: tipo };
   const m = body.message || {};
-  if (m.fromMe || m.wasSentByApi) return { tipo: 'ignorar' };
+  if (m.wasSentByApi) return { tipo: 'ignorar' };
   const texto = typeof m.text === 'string' ? m.text.trim() : '';
   const chatid = m.chatid || body.chat?.wa_chatid || '';
   const ehGrupo = Boolean(m.isGroup) || chatid.endsWith('@g.us');
-  const telefone = telefoneDoJid(m.sender_pn) || telefoneDoJid(m.sender) || (!ehGrupo ? telefoneDoJid(chatid) : '') || telefoneDoJid(body.chat?.wa_chatid);
+  let telefone = telefoneDoJid(m.sender_pn) || telefoneDoJid(m.sender) || (!ehGrupo ? telefoneDoJid(chatid) : '') || telefoneDoJid(body.chat?.wa_chatid);
+  let proprio = false;
+  if (m.fromMe) {
+    // Mensagem que o próprio dono do número escreveu. Só interessa na conversa consigo mesmo
+    // (simulação) ou no grupo dos moradores. Mensagens dele para outras pessoas são ignoradas.
+    const dono = soDigitos(body.owner || '');
+    if (foiEnviadaPeloSistema(m.messageid || m.id, texto)) return { tipo: 'ignorar' };
+    const alvoChat = telefoneDoJid(chatid) || soDigitos(body.chat?.phone || '');
+    if (ehGrupo) { telefone = dono || telefone; proprio = true; }
+    else if (dono && alvoChat === dono) { telefone = dono; proprio = true; }
+    else return { tipo: 'ignorar' };
+  }
   return {
     tipo: 'mensagem',
+    proprio,
     ehGrupo,
     chatid,
     telefone,
