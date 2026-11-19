@@ -195,6 +195,8 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
+  v.sindico_reclamacoes = ['todas', 'reincidencia', 'nenhuma'].includes(req.body.sindico_reclamacoes) ? req.body.sindico_reclamacoes : 'todas';
+  v.sindico_reincidencia_minima = String(Math.min(5, Math.max(2, Number(req.body.sindico_reincidencia_minima) || 3)));
   await setConfig(v);
   avisar(req, 'Configurações salvas.');
   res.redirect('/configuracoes');

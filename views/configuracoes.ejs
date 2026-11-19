@@ -17,7 +17,24 @@
     <label>Zelador<input name="telefone_zelador" id="telefone_zelador" value="<%= c.telefone_zelador ? u.formatarTelefone(c.telefone_zelador) : '' %>" inputmode="tel"></label>
     <label>Portaria<input name="telefone_portaria" id="telefone_portaria" value="<%= c.telefone_portaria ? u.formatarTelefone(c.telefone_portaria) : '' %>" inputmode="tel"></label>
   </div>
-  <p class="small muted">Síndico: urgências, reincidência de reclamações, manutenção preventiva e assuntos encaminhados. Zelador: chamados novos. Portaria: reclamações novas, sem o nome de quem reclamou.</p>
+  <p class="small muted">Síndico: urgências, reclamações (conforme a escolha abaixo), manutenção preventiva e assuntos encaminhados. Zelador: chamados novos. Portaria: todas as reclamações novas. Ninguém vê o nome de quem reclamou.</p>
+
+  <h2 style="margin-top:8px">Reclamações para o síndico</h2>
+  <div class="linha-campos">
+    <label>O síndico recebe no WhatsApp
+      <select name="sindico_reclamacoes" id="sindico_reclamacoes">
+        <option value="todas" <%= (c.sindico_reclamacoes || 'todas') === 'todas' ? 'selected' : '' %>>Todas as reclamações novas</option>
+        <option value="reincidencia" <%= c.sindico_reclamacoes === 'reincidencia' ? 'selected' : '' %>>Só quando uma unidade reincide</option>
+        <option value="nenhuma" <%= c.sindico_reclamacoes === 'nenhuma' ? 'selected' : '' %>>Não receber (só no painel)</option>
+      </select>
+    </label>
+    <label>Reincidência a partir de
+      <select name="sindico_reincidencia_minima" id="sindico_reincidencia_minima">
+        <% for (const n of [2, 3, 4, 5]) { %><option value="<%= n %>" <%= String(c.sindico_reincidencia_minima || 3) === String(n) ? 'selected' : '' %>><%= n %> reclamações em 30 dias</option><% } %>
+      </select>
+    </label>
+  </div>
+  <p class="small muted">Com "Todas", a mensagem já avisa quando a unidade passou do limite de reincidência. Todas as reclamações continuam aparecendo no painel, em Reclamações.</p>
 
   <h2 style="margin-top:8px">Grupo dos moradores</h2>
   <label>Link de convite do grupo<input name="grupo_convite" id="grupo_convite" value="<%= c.grupo_convite || '' %>" placeholder="https://chat.whatsapp.com/..."></label>

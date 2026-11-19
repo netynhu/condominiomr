@@ -15,7 +15,7 @@
   <div class="acoes">
     <% for (const [unid, n] of reinc) { %><span class="tag <%= n >= 3 ? 'urgente' : 'alta' %>">Unidade <%= unid %>: <%= n %></span><% } %>
   </div>
-  <p class="small muted">A partir de 3 reclamações o síndico recebe alerta no WhatsApp. Para uma notificação formal, use o rascunho com IA na página de avisos.</p>
+  <p class="small muted">O que o síndico recebe no WhatsApp é definido em <a href="/configuracoes">Ajustes do prédio</a> (hoje: <%= { todas: 'todas as reclamações', reincidencia: `só reincidência, a partir de ${cfg.sindico_reincidencia_minima || 3}`, nenhuma: 'nada, só o painel' }[cfg.sindico_reclamacoes || 'todas'] %>). Para uma notificação formal, use o rascunho com IA na página de avisos.</p>
 </div>
 <% } %>
 

@@ -41,6 +41,8 @@ const PADRAO = {
   horario_administracao: 'segunda a sexta, das 9h às 18h',
   instrucoes_extras: '',
   grupo_chamar_privado: '1',
+  sindico_reclamacoes: 'todas',       // todas | reincidencia | nenhuma
+  sindico_reincidencia_minima: '3',
 };
 
 async function getConfig() {

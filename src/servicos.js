@@ -182,9 +182,16 @@ async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, des
   const msg = `📣 Reclamação nº ${r.id}${acontecendo_agora ? ' · ACONTECENDO AGORA' : ''}\nTipo: ${tipo}\n${alvo}${descricao}\nQuem reclamou fica protegido. Veja no painel.`;
   const cfg = await getConfig();
   await avisarEquipe('portaria', msg);
-  if (cfg.telefone_sindico && normalizarTelefone(cfg.telefone_sindico) !== normalizarTelefone(cfg.telefone_portaria)) {
-    const alerta = reincidencia >= 3 ? `\n\n⚠️ Reincidência: ${reincidencia} reclamações contra a unidade ${unidade_alvo} nos últimos 30 dias. Vale avaliar uma notificação formal.` : '';
-    await avisarEquipe('sindico', msg + alerta);
+
+  // O síndico decide em Ajustes: todas as reclamações, só reincidência (a partir de N em 30 dias) ou nenhuma
+  const modo = cfg.sindico_reclamacoes || 'todas';
+  const minimo = Math.max(2, Number(cfg.sindico_reincidencia_minima) || 3);
+  const reincidente = reincidencia >= minimo;
+  const mesmoNumero = normalizarTelefone(cfg.telefone_sindico) === normalizarTelefone(cfg.telefone_portaria);
+  const alerta = reincidente ? `\n\n⚠️ Reincidência: ${reincidencia} reclamações contra a unidade ${unidade_alvo} nos últimos 30 dias. Vale avaliar uma notificação formal.` : '';
+  if (cfg.telefone_sindico && modo !== 'nenhuma') {
+    if (modo === 'todas' && !mesmoNumero) await avisarEquipe('sindico', msg + alerta);
+    else if (reincidente) await avisarEquipe('sindico', mesmoNumero && modo === 'todas' ? alerta.trim() : msg + alerta);
   }
   return { ...r, reincidencia };
 }
