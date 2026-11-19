@@ -2,7 +2,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { env } = require('../config');
-const { enviar } = require('../servicos');
+const { enviarBotoes } = require('../servicos');
 const { db, ok, getConfig, setConfig } = require('../db');
 const { normalizarTelefone } = require('../util');
 const { a, exigir, avisar } = require('./comum');
@@ -168,7 +168,10 @@ router.post('/equipe/:id/link', admin, a(async (req, res) => {
   const link = `${env.APP_URL}/entrar/${token}`;
   let enviado = false;
   if (u.telefone) {
-    enviado = await enviar(u.telefone, `Olá, ${u.nome.split(' ')[0]}! Este é o seu acesso ao app ${u.perfil === 'zelador' ? 'do zelador' : 'do condomínio'} do ${cfg.nome_predio}.\n\n👉 ${link}\n\nToque no link para entrar. Depois, no menu do navegador, escolha "Adicionar à tela inicial" para ter o ícone no celular. Não compartilhe este link.`);
+    // O link vai só no botão; aparece escrito apenas se o botão falhar (plano B)
+    enviado = await enviarBotoes(u.telefone,
+      `Olá, ${u.nome.split(' ')[0]}! Este é o seu acesso ao app ${u.perfil === 'zelador' ? 'do zelador' : 'do condomínio'} do ${cfg.nome_predio}.\n\nToque no botão abaixo para entrar. Depois, no menu do navegador, escolha "Adicionar à tela inicial" para ter o ícone no celular. Não encaminhe esta mensagem para ninguém.`,
+      [`🔑 Entrar no app|${link}`], { rodape: u.perfil === 'zelador' ? 'App do zelador' : cfg.nome_predio, planoB: `👉 ${link}`, rotulo: u.perfil === 'zelador' ? 'zelador' : '' });
   }
   avisar(req, enviado ? `Link enviado para o WhatsApp de ${u.nome}. Links antigos deixaram de funcionar.` : `Link de ${u.nome} (cadastre o WhatsApp para enviar automaticamente): ${link}`, enviado ? 'ok' : 'erro');
   res.redirect('/equipe');
