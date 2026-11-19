@@ -191,10 +191,11 @@ router.get('/configuracoes', admin, a(async (req, res) => {
 }));
 
 router.post('/configuracoes', admin, a(async (req, res) => {
-  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras'];
+  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras', 'horario_obras', 'horario_mudancas', 'horario_silencio'];
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
+  v.avisar_autor_reclamacao = req.body.avisar_autor_reclamacao === 'on' ? '1' : '0';
   v.sindico_reclamacoes = ['todas', 'reincidencia', 'nenhuma'].includes(req.body.sindico_reclamacoes) ? req.body.sindico_reclamacoes : 'todas';
   v.sindico_reincidencia_minima = String(Math.min(5, Math.max(2, Number(req.body.sindico_reincidencia_minima) || 3)));
   await setConfig(v);

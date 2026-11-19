@@ -35,6 +35,14 @@
     </label>
   </div>
   <p class="small muted">Com "Todas", a mensagem já avisa quando a unidade passou do limite de reincidência. Todas as reclamações continuam aparecendo no painel, em Reclamações.</p>
+  <label class="check"><input type="checkbox" name="avisar_autor_reclamacao" id="avisar_autor_reclamacao" <%= c.avisar_autor_reclamacao !== '0' ? 'checked' : '' %>> Avisar quem reclamou quando a reclamação entrar em tratamento e quando for resolvida</label>
+  <p class="small muted">Na resolvida, a pessoa recebe o que foi feito e os botões "Voltou a acontecer" e "Está resolvido". Se voltar, a reclamação é reaberta e a portaria e o síndico são avisados. Reclamação arquivada não gera mensagem.</p>
+
+  <h2 style="margin-top:8px">Horários permitidos</h2>
+  <p class="small muted">O assistente usa estes horários antes de registrar reclamação: obra, serviço ou mudança dentro do horário permitido não vira reclamação, e ele explica o horário ao morador.</p>
+  <label>Obras, reformas e serviços nos apartamentos<input name="horario_obras" id="horario_obras" value="<%= c.horario_obras %>"></label>
+  <label>Mudanças<input name="horario_mudancas" id="horario_mudancas" value="<%= c.horario_mudancas %>"></label>
+  <label>Horário de silêncio<input name="horario_silencio" id="horario_silencio" value="<%= c.horario_silencio %>"></label>
 
   <h2 style="margin-top:8px">Grupo dos moradores</h2>
   <label>Link de convite do grupo<input name="grupo_convite" id="grupo_convite" value="<%= c.grupo_convite || '' %>" placeholder="https://chat.whatsapp.com/..."></label>

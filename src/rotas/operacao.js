@@ -66,10 +66,10 @@ router.get('/reclamacoes', exigir('admin', 'portaria'), a(async (req, res) => {
 
 router.post('/reclamacoes/:id', exigir('admin', 'portaria'), a(async (req, res) => {
   const { status, tratativa } = req.body;
-  const patch = { status, tratativa: tratativa || null, tratada_por: req.session.usuario.nome };
-  if (status === 'resolvida' || status === 'arquivada') patch.tratada_em = new Date().toISOString();
-  ok(await db.from('reclamacoes').update(patch).eq('id', req.params.id));
-  avisar(req, `Reclamação nº ${req.params.id} atualizada.`);
+  if (!['nova', 'em_tratamento', 'resolvida', 'arquivada'].includes(status)) return res.redirect('/reclamacoes');
+  const r = await sv.atualizarReclamacao(req.params.id, status, (tratativa || '').trim(), req.session.usuario.nome);
+  const avisado = r.autor && (status === 'em_tratamento' || status === 'resolvida');
+  avisar(req, `Reclamação nº ${req.params.id} atualizada.${avisado ? ' Quem reclamou foi avisado no WhatsApp.' : ''}`);
   res.redirect('/reclamacoes');
 }));
 

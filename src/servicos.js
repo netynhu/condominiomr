@@ -196,6 +196,47 @@ async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, des
   return { ...r, reincidencia };
 }
 
+const TIPO_RECL = (t) => ({ convivencia: 'convivência', outro: 'outro assunto' }[t] || t);
+
+// Portaria/administração atualiza a reclamação. Quem reclamou é avisado (se ligado em Ajustes):
+// em tratamento -> "já estão verificando"; resolvida -> o que foi feito + botões "voltou a acontecer" / "está resolvido".
+// Arquivada não gera mensagem (pode ser reclamação sem fundamento).
+async function atualizarReclamacao(id, status, tratativa, usuarioNome) {
+  const patch = { status, tratativa: tratativa || null, tratada_por: usuarioNome };
+  if (status === 'resolvida' || status === 'arquivada') patch.tratada_em = new Date().toISOString();
+  const r = ok(await db.from('reclamacoes').update(patch).eq('id', id).select('*, autor:moradores(id, nome, telefone, ativo)').single());
+  const cfg = await getConfig();
+  const autor = r.autor;
+  if (cfg.avisar_autor_reclamacao === '0' || !autor || !autor.ativo) return r;
+  const nome = primeiroNome(autor.nome);
+  if (status === 'em_tratamento') {
+    await enviar(autor.telefone, `Olá, ${nome}! Sua reclamação nº ${r.id} (${TIPO_RECL(r.tipo)}) já está sendo verificada.${tratativa ? `\n${tratativa}` : ''}\nTe aviso quando for resolvida.`, autor.id);
+  } else if (status === 'resolvida') {
+    await enviarBotoes(autor.telefone,
+      `Olá, ${nome}! ✅ Sua reclamação nº ${r.id} (${TIPO_RECL(r.tipo)}) foi tratada.${tratativa ? `\nO que foi feito: ${tratativa}` : ''}\n\nSe o problema continuar ou voltar a acontecer, é só me avisar aqui que eu reabro a reclamação.`,
+      [`🔁 Voltou a acontecer|reclamacao_voltou:${r.id}`, '👍 Está resolvido|reclamacao_ok'],
+      { planoB: 'Se continuar, responda "voltou a acontecer".', moradorId: autor.id });
+  }
+  return r;
+}
+
+// Morador avisa que o problema voltou: reabre a reclamação e avisa portaria e síndico
+async function reabrirReclamacao(id, morador, detalhe) {
+  const r = ok(await db.from('reclamacoes').select('*').eq('id', id).maybeSingle());
+  if (!r || r.autor_morador_id !== morador.id) throw new Error('Reclamação não encontrada para este morador.');
+  if (r.status === 'nova' || r.status === 'em_tratamento') return { ...r, jaAberta: true };
+  const quando = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const descricao = `${r.descricao}\n[Reaberta em ${quando}] ${detalhe || 'O morador informou que o problema continua.'}`;
+  const novo = ok(await db.from('reclamacoes').update({ status: 'nova', tratada_em: null, descricao }).eq('id', id).select().single());
+  const cfg = await getConfig();
+  const msg = `🔁 Reclamação nº ${id} REABERTA: voltou a acontecer\nTipo: ${TIPO_RECL(r.tipo)}${r.unidade_alvo ? `\nUnidade: ${r.unidade_alvo}` : ''}\n${detalhe || ''}\nQuem reclamou fica protegido. Veja no painel.`;
+  await avisarEquipe('portaria', msg);
+  if (cfg.telefone_sindico && (cfg.sindico_reclamacoes || 'todas') !== 'nenhuma' && normalizarTelefone(cfg.telefone_sindico) !== normalizarTelefone(cfg.telefone_portaria)) {
+    await avisarEquipe('sindico', msg);
+  }
+  return novo;
+}
+
 const textoBoasVindas = (m, cfg, titulo) => `${titulo ? `${titulo}, ` : 'Olá, '}${primeiroNome(m.nome)}! Você foi cadastrado(a) no assistente do ${cfg.nome_predio}${m.unidade ? ` (${rotuloUnidade(m.unidade)})` : ''}.\n\nPor aqui você abre chamados de manutenção, faz reclamações sem se expor, tira dúvidas sobre as regras e fica sabendo dos eventos e obras. Pode mandar texto, áudio, foto ou vídeo.`;
 
 // Mensagem de boas-vindas ao morador recém-cadastrado, com o botão para entrar no grupo dos moradores
@@ -244,6 +285,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, enviar, enviarBotoes, avisarEquipe, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

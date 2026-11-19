@@ -45,7 +45,7 @@ const FERRAMENTAS = [
   },
   {
     name: 'registrar_reclamacao',
-    description: 'Registra uma reclamação de convivência (barulho, vaga, animal, lixo, obra, comportamento). O nome de quem reclama nunca é mostrado à portaria nem a outros moradores.',
+    description: 'Registra uma reclamação de convivência (barulho, vaga, animal, lixo, obra, comportamento). O nome de quem reclama nunca é mostrado à portaria nem a outros moradores. Antes, siga a REGRA dos horários permitidos: obra, serviço ou mudança dentro do horário permitido não vira reclamação.',
     parameters: {
       type: 'object',
       properties: {
@@ -56,6 +56,15 @@ const FERRAMENTAS = [
         acontecendo_agora: { type: 'boolean' },
       },
       required: ['tipo', 'descricao', 'acontecendo_agora'],
+    },
+  },
+  {
+    name: 'reabrir_reclamacao',
+    description: 'Reabre uma reclamação DESTE morador que já foi tratada, quando ele avisa que o problema continua ou voltou. Avisa a portaria e o síndico.',
+    parameters: {
+      type: 'object',
+      properties: { numero: { type: 'integer' }, descricao: { type: 'string', description: 'O que está acontecendo agora' } },
+      required: ['numero'],
     },
   },
   {
@@ -114,6 +123,12 @@ async function executar(nome, args, ctx) {
       ctx.acoes.push(`reclamação ${r.id}`);
       return { ok: true, protocolo: r.id, portaria_avisada: true };
     }
+    case 'reabrir_reclamacao': {
+      const r = await sv.reabrirReclamacao(Number(args.numero), morador, args.descricao);
+      if (r.jaAberta) return { ok: true, numero: r.id, observacao: 'A reclamação já está aberta e em análise.' };
+      ctx.acoes.push(`reclamação ${r.id} reaberta`);
+      return { ok: true, numero: r.id, reaberta: true, portaria_avisada: true };
+    }
     case 'consultar_agenda': {
       const dias = Math.min(Math.max(Number(args.dias) || 30, 1), 180);
       const ate = new Date(Date.now() + dias * 86400000).toISOString();
@@ -170,15 +185,30 @@ COMO SE COMPORTAR
 - Quando aprender algo duradouro e útil sobre a pessoa, use salvar_memoria (sem dados sensíveis).
 - Se perguntarem se você é humano, diga que é o assistente virtual do condomínio, com acompanhamento da administração.
 - Horário da administração: ${cfg.horario_administracao}.
+
+HORÁRIOS PERMITIDOS DO PRÉDIO (definidos pela administração)
+- Obras, reformas e serviços nos apartamentos (furadeira, martelo, marceneiro, pintor etc.): ${cfg.horario_obras}
+- Mudanças: ${cfg.horario_mudancas}
+- Silêncio obrigatório: ${cfg.horario_silencio}
+REGRA ANTES DE REGISTRAR RECLAMAÇÃO DE BARULHO, OBRA, SERVIÇO OU MUDANÇA:
+1. Compare o dia da semana e a hora de AGORA (está nos dados de quem fala) com os horários acima.
+2. Se o barulho for de obra, reforma, serviço ou mudança e estiver DENTRO do horário permitido: NÃO registre a reclamação. Explique com educação que esse horário é permitido, informe até quando vai e diga que, se continuar depois disso, é só avisar que você registra.
+3. Barulho comum (som, festa, conversa alta) fora do horário de silêncio: explique que ainda não é horário de silêncio e que o volume deve respeitar os vizinhos; só registre se a pessoa disser que está excessivo ou insistir.
+4. Fora do horário permitido ou no horário de silêncio: registre normalmente.
+5. Se o morador disser que o barulho está acontecendo há dias ou de forma abusiva, registre mesmo dentro do horário, deixando isso claro na descrição.
+
+ACOMPANHAMENTO DE RECLAMAÇÕES
+- Quando uma reclamação do morador foi resolvida e ele disser que o problema continua ou voltou, use reabrir_reclamacao com o número dela, em vez de abrir uma nova.
 ${cfg.instrucoes_extras ? `\nINSTRUÇÕES DA ADMINISTRAÇÃO\n${cfg.instrucoes_extras}\n` : ''}
 DOCUMENTOS DO CONDOMÍNIO
 ${textoDocs || '(nenhum documento cadastrado ainda: encaminhe dúvidas de regras à administração)'}`;
 }
 
 async function montarParteVariavel(morador) {
-  const [fatos, abertos] = await Promise.all([
+  const [fatos, abertos, reclamacoes] = await Promise.all([
     db.from('memoria').select('fato, criado_em').eq('morador_id', morador.id).order('criado_em', { ascending: false }).limit(40).then(ok),
     db.from('chamados').select('id, titulo, status').eq('morador_id', morador.id).in('status', ['aberto', 'em_andamento']).limit(10).then(ok),
+    db.from('reclamacoes').select('id, tipo, status, tratativa, criado_em').eq('autor_morador_id', morador.id).gte('criado_em', new Date(Date.now() - 15 * 86400000).toISOString()).order('criado_em', { ascending: false }).limit(5).then(ok),
   ]);
   return `Hoje: ${hojeParaIA()}.
 
@@ -190,7 +220,8 @@ Vínculo: ${morador.tipo}
 Resumo do perfil: ${morador.resumo_perfil || 'ainda sem resumo'}
 O que você já sabe sobre essa pessoa:
 ${fatos.length ? fatos.map((f) => `- ${f.fato}`).join('\n') : '- nada ainda'}
-Chamados em aberto: ${abertos.length ? abertos.map((c) => `nº ${c.id} ${c.titulo} (${sv.ROTULO_STATUS[c.status]})`).join('; ') : 'nenhum'}`;
+Chamados em aberto: ${abertos.length ? abertos.map((c) => `nº ${c.id} ${c.titulo} (${sv.ROTULO_STATUS[c.status]})`).join('; ') : 'nenhum'}
+Reclamações dele nos últimos 15 dias: ${reclamacoes.length ? reclamacoes.map((r) => `nº ${r.id} ${r.tipo} (${r.status.replace('_', ' ')}${r.tratativa ? `; tratativa: ${r.tratativa}` : ''})`).join('; ') : 'nenhuma'}`;
 }
 
 // Mostra no log quanto do prompt veio do cache, para conferir a economia
@@ -404,6 +435,9 @@ const BOTOES = {
 async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, botao }) {
   if (botao) {
     if (BOTOES[botao]) return BOTOES[botao];
+    const voltou = /^reclamacao_voltou:(\d+)$/.exec(botao);
+    if (voltou) return `O problema da reclamação nº ${voltou[1]} voltou a acontecer.`;
+    if (botao === 'reclamacao_ok') return 'Está resolvido, obrigado!';
     if (/^[1-5]$/.test(botao)) return botao; // nota do atendimento
     return `[clicou no botão: ${texto || botao}]`;
   }
@@ -511,4 +545,4 @@ async function avaliarMensagemDoGrupo(morador, texto) {
     ['🔧 Abrir chamado|abrir_chamado_grupo', 'Não precisa|nao_precisa'], { planoB: 'É só responder aqui.', moradorId: morador.id });
 }
 
-module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo };
+module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, _teste: { montarParteFixa, FERRAMENTAS } };

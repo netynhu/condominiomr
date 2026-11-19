@@ -41,6 +41,9 @@ const PADRAO = {
   horario_administracao: 'segunda a sexta, das 9h às 18h',
   instrucoes_extras: '',
   grupo_chamar_privado: '1',
+  horario_obras: 'segunda a sexta, das 9h às 17h; sábado, das 9h às 13h; domingo e feriado: não pode',
+  horario_mudancas: 'segunda a sábado, das 8h às 17h; domingo e feriado: não pode',
+  horario_silencio: 'das 22h às 8h de domingo a quinta; das 23h às 9h na sexta, no sábado e em véspera de feriado',
   sindico_reclamacoes: 'todas',       // todas | reincidencia | nenhuma
   sindico_reincidencia_minima: '3',
 };
