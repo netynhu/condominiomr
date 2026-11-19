@@ -1,5 +1,5 @@
 <%- include('partials/topo') %>
-<% const perfis = { admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' }; %>
+<% const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' }; %>
 <div class="cabeca">
   <div><h1>Equipe e acessos</h1><p class="muted">Quem entra no sistema. Cada perfil vê só a sua parte. O zelador entra pelo link enviado no WhatsApp, sem senha.</p></div>
 </div>
@@ -83,7 +83,8 @@ document.addEventListener('click', (e) => {
   const perfil = document.getElementById('perfil');
   const dicas = {
     zelador: 'O zelador não precisa de e-mail nem senha. Depois de criar, clique em "Enviar link de acesso": ele recebe o link no WhatsApp e fica conectado no celular. Ele também recebe os chamados novos nesse número.',
-    admin: 'Acesso completo ao painel.',
+    sindico: 'Acesso completo ao painel. Com o WhatsApp cadastrado, ele recebe os alertas do síndico e pode pedir ao assistente pelo WhatsApp: avisos no grupo, eventos, chamados e resumo do prédio. O aviso só sai depois que ele confirma.',
+    admin: 'Acesso completo ao painel. Com o WhatsApp cadastrado, também pode usar o assistente pelo WhatsApp, como o síndico.',
     portaria: 'Vê só as reclamações, sem saber quem reclamou.',
     conselho: 'Vê o relatório e o radar do grupo, só leitura.',
   };

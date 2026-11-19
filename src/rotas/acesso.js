@@ -26,7 +26,7 @@ router.post('/login', a(async (req, res) => {
     return res.render('login', { titulo: 'Entrar', erro: 'E-mail ou senha incorretos.', email });
   }
   tentativas.delete(ip);
-  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil };
+  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil === 'sindico' ? 'admin' : u.perfil, cargo: u.perfil };
   res.redirect(PAGINA_INICIAL[u.perfil]);
 }));
 
@@ -48,7 +48,7 @@ router.post('/configurar', a(async (req, res) => {
     nome: nome.trim(), email: email.trim().toLowerCase(), senha_hash: await bcrypt.hash(senha, 10), perfil: 'admin',
   }).select().single());
   await setConfig({ nome_predio: nome_predio.trim(), nome_assistente: `Assistente do ${nome_predio.trim()}` });
-  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil };
+  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil === 'sindico' ? 'admin' : u.perfil, cargo: u.perfil };
   avisar(req, 'Tudo pronto. Agora conecte o WhatsApp do prédio.');
   res.redirect('/whatsapp');
 }));

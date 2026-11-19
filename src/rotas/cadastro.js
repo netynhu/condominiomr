@@ -181,14 +181,16 @@ router.post('/equipe', admin, a(async (req, res) => {
   if (id) {
     dados.ativo = req.body.ativo === 'on';
     if (senha) dados.senha_hash = await bcrypt.hash(senha, 10);
-    if (id === req.session.usuario.id && (!dados.ativo || perfil !== 'admin')) { avisar(req, 'Você não pode tirar o seu próprio acesso de administrador.', 'erro'); return res.redirect('/equipe'); }
+    if (id === req.session.usuario.id && (!dados.ativo || !['admin', 'sindico'].includes(perfil))) { avisar(req, 'Você não pode tirar o seu próprio acesso de administrador.', 'erro'); return res.redirect('/equipe'); }
     ok(await db.from('usuarios').update(dados).eq('id', id));
   } else {
     if (!senha || senha.length < 8) { avisar(req, 'A senha precisa de pelo menos 8 caracteres.', 'erro'); return res.redirect('/equipe'); }
     const r = await db.from('usuarios').insert({ ...dados, senha_hash: await bcrypt.hash(senha, 10) });
     if (r.error) { avisar(req, r.error.code === '23505' ? 'Este e-mail já tem acesso.' : r.error.message, 'erro'); return res.redirect('/equipe'); }
   }
-  avisar(req, 'Acesso salvo.');
+  // O síndico cadastrado com WhatsApp passa a receber os alertas do síndico
+  if (perfil === 'sindico' && dados.telefone && (id ? dados.ativo : true)) await setConfig({ telefone_sindico: dados.telefone });
+  avisar(req, perfil === 'sindico' && dados.telefone ? 'Acesso salvo. Este número passa a receber os alertas do síndico e pode usar o assistente no WhatsApp.' : 'Acesso salvo.');
   res.redirect('/equipe');
 }));
 

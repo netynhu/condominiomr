@@ -12,7 +12,7 @@ const HISTORICO = 20;
 async function acharAdmin(telefone) {
   const vars = variantesTelefone(telefone);
   if (!vars[0]) return null;
-  const [u] = ok(await db.from('usuarios').select('id, nome, perfil, telefone').in('telefone', vars).eq('ativo', true).eq('perfil', 'admin').limit(1));
+  const [u] = ok(await db.from('usuarios').select('id, nome, perfil, telefone').in('telefone', vars).eq('ativo', true).in('perfil', ['admin', 'sindico']).limit(1));
   return u || null;
 }
 

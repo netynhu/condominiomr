@@ -30,7 +30,7 @@
   const ativo = (href) => href === '/' ? caminho === '/' : (caminho === href || caminho.startsWith(href + '/') || (href === '/whatsapp' && caminho.startsWith('/whatsapp')));
   let secaoAtual = '';
   for (const [g, itens] of grupos) for (const it of itens) if (ativo(it[0])) secaoAtual = g;
-  const perfis = { admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' };
+  const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' };
   const iniciais = usuario.nome.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 %>
 <div class="app">
@@ -55,7 +55,7 @@
     </nav>
     <div class="lateral-usuario">
       <span class="avatar"><%= iniciais %></span>
-      <div><b><%= usuario.nome %></b><small><%= perfis[usuario.perfil] %></small></div>
+      <div><b><%= usuario.nome %></b><small><%= perfis[usuario.cargo || usuario.perfil] %></small></div>
       <form method="post" action="/sair"><button class="icone-btn" type="submit" title="Sair" aria-label="Sair"><%- icone('sair') %></button></form>
     </div>
   </aside>

@@ -10,7 +10,7 @@ create table if not exists usuarios (
   nome text not null,
   email text not null unique,
   senha_hash text not null,
-  perfil text not null check (perfil in ('admin','zelador','portaria','conselho')),
+  perfil text not null check (perfil in ('sindico','admin','zelador','portaria','conselho')),
   telefone text,
   ativo boolean not null default true,
   criado_em timestamptz not null default now()
