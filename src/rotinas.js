@@ -60,8 +60,10 @@ async function lembrarEventos() {
     .gt('inicio', new Date(agora).toISOString()).lte('inicio', new Date(agora + 24 * 3600000).toISOString()));
   for (const ev of l) {
     await db.from('eventos').update({ lembrete_enviado: true }).eq('id', ev.id);
-    const texto = `Lembrete do condomínio: ${ev.titulo}\nQuando: ${dataExtenso(ev.inicio)}${ev.local ? `\nOnde: ${ev.local}` : ''}${ev.descricao ? `\n\n${ev.descricao}` : ''}`;
-    await sv.enfileirar(ev.publico, texto, null);
+    const titulo = `Lembrete: ${ev.publico.startsWith('bloco:') ? `Bloco ${ev.publico.slice(6)} · ` : ''}${ev.titulo}`;
+    const texto = `🗓️ ${dataExtenso(ev.inicio)}${ev.local ? `\n📍 ${ev.local}` : ''}${ev.descricao ? `\n\n${ev.descricao}` : ''}`;
+    // Lembrete vai para o grupo (uma mensagem só). Sem grupo configurado, cai na fila do privado.
+    try { await sv.postarNoGrupo(titulo, texto); } catch { await sv.enfileirar(ev.publico, `${titulo}\n${texto}`, null); }
   }
 }
 

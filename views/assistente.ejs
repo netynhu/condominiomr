@@ -1,0 +1,58 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Assistente da administração</h1><p class="muted">Peça em português e o assistente faz no sistema. O mesmo assistente atende pelo WhatsApp quem tem perfil de Administração com o número cadastrado em Equipe e acessos. Avisos para os moradores sempre mostram uma prévia antes de sair.</p></div>
+</div>
+
+<div class="grade2">
+  <div class="card" style="gap:0;padding:0;overflow:hidden">
+    <div class="conversa" id="conversa" style="border-radius:0;min-height:420px;max-height:62vh">
+      <% if (!historico.length) { %><p class="small muted" id="vazio" style="margin:auto;text-align:center">Comece com um pedido. Exemplo: "Coloca aviso de manutenção do elevador do bloco B na terça, das 9h às 12h".</p><% } %>
+      <% for (const m of historico) { %><div class="bolha <%= m.direcao === 'entrada' ? 'saida' : '' %>"><%= m.texto %></div><% } %>
+    </div>
+    <form id="form-chat" class="acoes" style="padding:12px;border-top:1px solid var(--line);flex-wrap:nowrap">
+      <input id="texto" name="texto" autocomplete="off" placeholder="Escreva o pedido..." style="flex:1">
+      <button class="btn" type="submit" id="btn-enviar">Enviar</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="acoes"><h2>O que dá para pedir</h2><span class="selo-ia"><%- icone('ia') %>IA</span></div>
+    <div class="lista" id="sugestoes">
+      <% for (const s of [
+        'Coloca aviso de manutenção do elevador na terça, das 9h às 12h',
+        'Marca assembleia geral dia 5 às 19h no salão de festas',
+        'Quais chamados estão em aberto?',
+        'Marca o chamado 12 como resolvido: lâmpada trocada',
+        'Tem reclamação nova?',
+        'Cadastra Maria Souza, 11 98888-7777, bloco B apto 304, vaga 12',
+        'Me dá o resumo do dia',
+      ]) { %>
+        <button type="button" class="item" data-sugestao style="background:none;border:0;border-top:1px solid var(--line);text-align:left;cursor:pointer;font:inherit;color:var(--ink)"><span style="flex:1"><%= s %></span><span class="muted">→</span></button>
+      <% } %>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const c = document.getElementById('conversa');
+  const campo = document.getElementById('texto');
+  c.scrollTop = c.scrollHeight;
+  function bolha(texto, minha) {
+    const v = document.getElementById('vazio'); if (v) v.remove();
+    const d = document.createElement('div'); d.className = 'bolha' + (minha ? ' saida' : ''); d.textContent = texto;
+    c.appendChild(d); c.scrollTop = c.scrollHeight; return d;
+  }
+  document.getElementById('form-chat').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const texto = campo.value.trim(); if (!texto) return;
+    campo.value = ''; bolha(texto, true);
+    const espera = bolha('...', false);
+    const b = document.getElementById('btn-enviar'); b.disabled = true;
+    try { const r = await postJSON('/assistente', { texto }); espera.textContent = r.resposta || '(sem resposta)'; }
+    catch (err) { espera.textContent = 'Não consegui agora: ' + err.message; }
+    finally { b.disabled = false; campo.focus(); c.scrollTop = c.scrollHeight; }
+  });
+  document.querySelectorAll('[data-sugestao]').forEach((s) => s.addEventListener('click', () => { campo.value = s.querySelector('span').textContent; campo.focus(); }));
+})();
+</script>
+<%- include('partials/rodape') %>

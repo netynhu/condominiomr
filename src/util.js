@@ -55,6 +55,14 @@ function agoraBR() {
   return { dataISO: `${p.year}-${p.month}-${p.day}`, hora: Number(p.hour) % 24, minuto: Number(p.minute) };
 }
 
+// Data de hoje com ano e dia da semana, para a IA calcular "terça", "amanhã", "dia 25" sem errar o ano
+function hojeParaIA() {
+  const agora = new Date().toISOString();
+  const semana = fmt(agora, { weekday: 'long' });
+  const { dataISO, hora, minuto } = agoraBR();
+  return `${dataISO} (${semana}), ${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')} no horário de Brasília. Ano atual: ${dataISO.slice(0, 4)}`;
+}
+
 // <input type="datetime-local"> -> ISO com fuso de Brasília (sem horário de verão desde 2019)
 function localParaISO(s) {
   if (!s) return null;
@@ -78,5 +86,5 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = {
   soDigitos, normalizarTelefone, variantesTelefone, telefoneDoJid, formatarTelefone,
-  dataHora, data, dataExtenso, agoraBR, localParaISO, isoParaLocal, rotuloUnidade, primeiroNome, esperar, TZ,
+  dataHora, data, dataExtenso, agoraBR, hojeParaIA, localParaISO, isoParaLocal, rotuloUnidade, primeiroNome, esperar, TZ,
 };

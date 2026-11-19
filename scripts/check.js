@@ -7,12 +7,12 @@ const ejs = require('ejs');
 const raiz = path.join(__dirname, '..');
 let falhas = 0;
 
-for (const m of ['config', 'db', 'util', 'uazapi', 'ia', 'servicos', 'agente', 'rotinas', 'rotas/comum', 'rotas/acesso', 'rotas/whatsapp', 'rotas/cadastro', 'rotas/operacao', 'rotas/inteligencia']) {
+for (const m of ['config', 'db', 'util', 'uazapi', 'ia', 'servicos', 'agente', 'agente_admin', 'rotinas', 'fotos', 'icones', 'rotas/comum', 'rotas/acesso', 'rotas/zelador', 'rotas/whatsapp', 'rotas/cadastro', 'rotas/operacao', 'rotas/inteligencia']) {
   try { require(path.join(raiz, 'src', m)); } catch (e) { falhas++; console.error('Módulo', m, '->', e.message); }
 }
 
 const pasta = path.join(raiz, 'views');
-const arquivos = fs.readdirSync(pasta).filter((f) => f.endsWith('.ejs'));
+const arquivos = [...fs.readdirSync(pasta).filter((f) => f.endsWith('.ejs')), ...fs.readdirSync(path.join(pasta, 'z')).filter((f) => f.endsWith('.ejs')).map((f) => 'z/' + f)];
 for (const f of arquivos) {
   try { ejs.compile(fs.readFileSync(path.join(pasta, f), 'utf8'), { filename: path.join(pasta, f) }); } catch (e) { falhas++; console.error('Tela', f, '->', e.message); }
 }

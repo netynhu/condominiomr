@@ -18,7 +18,22 @@ const P = {
   fechar: '<path d="M18 6 6 18M6 6l12 12"/>',
   predio: '<path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M2 21h20"/><path d="M8 7h4M8 11h4M8 15h4"/>',
   ia: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
-  carro: '<path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0"/><path d="M3 17v-5l2-5h14l2 5v5"/><path d="M3 12h18"/>',
+  voltar: '<path d="M15 18l-6-6 6-6"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  mais: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  play: '<path d="M6 4l14 8-14 8z"/>',
+  local: '<path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  elevador: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 2v20M8 9l-1.5 2h3zM16 13l-1.5-2h3z"/>',
+  portao: '<path d="M3 21V7l9-4 9 4v14"/><path d="M7 21V11M12 21V11M17 21V11M3 11h18"/>',
+  garagem: '<path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0"/><path d="M3 17v-5l2-5h14l2 5v5"/><path d="M3 12h18"/>',
+  luz: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/>',
+  hall: '<path d="M4 21h4v-4h4v-4h4V9h4V5"/>',
+  lazer: '<path d="M2 18c2 0 2-1.5 4-1.5S8 18 10 18s2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 4-1.5M2 22c2 0 2-1.5 4-1.5S8 22 10 22s2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 4-1.5M8 15V5a2 2 0 0 1 4 0M16 15V5a2 2 0 0 0-4 0M8 9h8"/>',
+  limpeza: '<path d="M19 3 9 13M7 13l4 4-2 5H3l1-6zM14 8l2 2"/>',
+  agua: '<path d="M12 2.7S5 10 5 15a7 7 0 0 0 14 0c0-5-7-12.3-7-12.3z"/>',
+  outro: '<circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4.5M12 17.5h.01"/>',
+  carro:'<path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0"/><path d="M3 17v-5l2-5h14l2 5v5"/><path d="M3 12h18"/>',
 };
 
 function icone(nome, classe = '') {

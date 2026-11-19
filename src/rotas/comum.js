@@ -13,6 +13,6 @@ const exigir = (...perfis) => (req, res, next) => {
 
 const avisar = (req, texto, tipo = 'ok') => { req.session.aviso = { texto, tipo }; };
 
-const PAGINA_INICIAL = { admin: '/', zelador: '/chamados', portaria: '/reclamacoes', conselho: '/relatorio' };
+const PAGINA_INICIAL = { admin: '/', zelador: '/z', portaria: '/reclamacoes', conselho: '/relatorio' };
 
 module.exports = { a, exigir, avisar, PAGINA_INICIAL };

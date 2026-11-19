@@ -1,0 +1,63 @@
+<%- include('_topo', { voltar: '/z' }) %>
+<% const rot = { aberto: 'Esperando', em_andamento: 'Fazendo', resolvido: 'Feito', cancelado: 'Cancelado' };
+   const rotPri = { urgente: 'URGENTE', alta: 'Importante', normal: 'Normal', baixa: 'Pode esperar' }; %>
+
+<article class="detalhe">
+  <div class="selos">
+    <span class="selo st-<%= c.status %>"><%= rot[c.status] %></span>
+    <span class="selo <%= c.prioridade %>"><%= rotPri[c.prioridade] %></span>
+  </div>
+  <h1><%= c.titulo %></h1>
+  <p class="d-local"><%- icone('local') %><%= c.local || 'Local não informado' %></p>
+  <% if (c.descricao) { %><p class="d-desc"><%= c.descricao %></p><% } %>
+  <% if (c.foto) { %><img class="d-foto" src="/foto/<%= c.id %>/problema" alt="Foto do problema" loading="lazy"><% } %>
+  <p class="d-quem">
+    Nº <%= c.id %> · <%= u.dataHora(c.criado_em) %><br>
+    <%= c.morador ? `Pedido de ${c.morador.nome}${c.morador.unidade ? ' · apto ' + (c.morador.unidade.bloco ? c.morador.unidade.bloco + '-' : '') + c.morador.unidade.numero : ''}` : `Aberto por ${c.aberto_por || 'administração'}` %>
+  </p>
+  <% if (c.foto_conclusao) { %><p class="d-quem">Foto do serviço pronto:</p><img class="d-foto" src="/foto/<%= c.id %>/conclusao" alt="Foto do serviço pronto" loading="lazy"><% } %>
+</article>
+
+<div class="acao-fixa">
+  <% if (c.status === 'aberto') { %>
+    <form method="post" action="/z/<%= c.id %>/comecar"><button class="botao-grande azul" type="submit"><%- icone('play') %>Começar</button></form>
+  <% } else if (c.status === 'em_andamento') { %>
+    <button class="botao-grande verde" type="button" id="btn-terminei"><%- icone('check') %>Terminei</button>
+  <% } else { %>
+    <a class="botao-grande cinza" href="/z">Voltar para a lista</a>
+  <% } %>
+</div>
+
+<% if (c.status === 'em_andamento') { %>
+<dialog id="dlg-fim" class="folha">
+  <h2>Serviço pronto?</h2>
+  <p>Tire uma foto do serviço feito. O morador recebe a foto junto com o aviso.</p>
+  <label class="botao-foto" id="lbl-foto">
+    <input type="file" accept="image/*" capture="environment" id="foto" hidden>
+    <span id="foto-texto"><%- icone('camera') %>Tirar foto</span>
+    <img id="foto-previa" alt="" hidden>
+  </label>
+  <textarea id="obs" rows="2" placeholder="Quer escrever algo? (opcional)"></textarea>
+  <button class="botao-grande verde" type="button" id="btn-confirmar" autofocus><%- icone('check') %>Confirmar: está pronto</button>
+  <button class="botao-texto" type="button" id="btn-cancelar">Ainda não terminei</button>
+</dialog>
+<script src="/static/foto.js?v=1"></script>
+<script>
+(function () {
+  const dlg = document.getElementById('dlg-fim');
+  let foto = null;
+  document.getElementById('btn-terminei').onclick = () => dlg.showModal();
+  document.getElementById('btn-cancelar').onclick = () => dlg.close();
+  ligarFoto('foto', 'foto-previa', 'foto-texto', (d) => { foto = d; });
+  document.getElementById('btn-confirmar').onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Enviando...';
+    try {
+      const r = await fetch('/z/<%= c.id %>/terminar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ foto, observacao: document.getElementById('obs').value }) });
+      if (!r.ok) throw new Error();
+      location.href = '/z?aba=feito&ok=1';
+    } catch { b.disabled = false; b.textContent = 'Tentar de novo'; alert('Não deu certo. Confira a internet e tente de novo.'); }
+  };
+})();
+</script>
+<% } %>
+<%- include('_rodape') %>

@@ -15,11 +15,11 @@
   // Menu separado em: dia a dia (Operação), gestão do prédio (Administração) e ajustes (Configuração)
   const grupos = {
     admin: [
-      ['Operação', [['/', 'inicio', 'Início'], ['/chamados', 'chamados', 'Chamados', contadores.chamados], ['/reclamacoes', 'reclamacoes', 'Reclamações', contadores.reclamacoes], ['/avisos', 'avisos', 'Avisos'], ['/agenda', 'agenda', 'Agenda']]],
+      ['Operação', [['/', 'inicio', 'Início'], ['/assistente', 'ia', 'Assistente'],['/chamados', 'chamados', 'Chamados', contadores.chamados], ['/reclamacoes', 'reclamacoes', 'Reclamações', contadores.reclamacoes], ['/avisos', 'avisos', 'Avisos'], ['/agenda', 'agenda', 'Agenda']]],
       ['Administração', [['/moradores', 'moradores', 'Moradores'], ['/manutencoes', 'manutencao', 'Manutenção'], ['/radar', 'radar', 'Radar do grupo'], ['/relatorio', 'relatorio', 'Relatório']]],
       ['Configuração', [['/whatsapp', 'whatsapp', 'WhatsApp'], ['/documentos', 'documentos', 'Documentos'], ['/equipe', 'equipe', 'Equipe e acessos'], ['/configuracoes', 'configuracoes', 'Ajustes do prédio']]],
     ],
-    zelador: [['Operação', [['/chamados', 'chamados', 'Chamados', contadores.chamados]]]],
+    zelador: [['Operação', [['/z', 'chamados', 'Meus chamados', contadores.chamados]]]],
     portaria: [['Operação', [['/reclamacoes', 'reclamacoes', 'Reclamações', contadores.reclamacoes]]]],
     conselho: [['Acompanhamento', [['/relatorio', 'relatorio', 'Relatório'], ['/radar', 'radar', 'Radar do grupo']]]],
   }[usuario.perfil] || [];

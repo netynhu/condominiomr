@@ -16,6 +16,7 @@
   <div class="numero"><b><%= m.reclamacoes %></b><span>reclamações registradas</span></div>
   <div class="numero"><b><%= m.avisos %></b><span>avisos enviados</span></div>
   <div class="numero"><b><%= m.abertosAgora %></b><span>chamados em aberto hoje</span></div>
+  <div class="numero"><b><%= m.notaMedia == null ? '-' : m.notaMedia.toFixed(1).replace('.', ',') %><span style="font-size:1rem;color:var(--muted)"> / 5</span></b><span>nota média dos moradores<%= m.notas ? ` (${m.notas} avaliações)` : '' %></span></div>
 </div>
 
 <div class="grade">

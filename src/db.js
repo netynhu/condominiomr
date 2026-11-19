@@ -34,6 +34,7 @@ const PADRAO = {
   grupo_nome: '',
   horario_administracao: 'segunda a sexta, das 9h às 18h',
   instrucoes_extras: '',
+  grupo_chamar_privado: '1',
 };
 
 async function getConfig() {

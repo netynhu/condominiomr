@@ -40,7 +40,9 @@ async function tratarWebhook(body) {
     const { acharMorador } = require('./servicos');
     const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
     await db.from('grupo_mensagens').insert({ telefone: ev.telefone || null, nome: ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
-    return; // o assistente só lê o grupo, nunca responde nele
+    // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
+    if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, ev.texto);
+    return;
   }
 
   if (!ev.telefone) return;
@@ -49,7 +51,7 @@ async function tratarWebhook(body) {
 
 // ---------- Painel ----------
 app.use(express.urlencoded({ extended: false, limit: '2mb' }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' })); // fotos do celular chegam comprimidas, mas com folga
 app.use(cookieSession({
   name: 'cond_sessao',
   keys: [env.SESSION_SECRET || 'defina-SESSION_SECRET'],
@@ -87,6 +89,7 @@ app.use(async (req, res, next) => {
 });
 
 app.use(require('./rotas/acesso'));
+app.use(require('./rotas/zelador'));
 app.use(require('./rotas/whatsapp'));
 app.use(require('./rotas/cadastro'));
 app.use(require('./rotas/operacao'));

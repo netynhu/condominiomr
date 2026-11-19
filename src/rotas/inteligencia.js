@@ -119,9 +119,9 @@ router.get('/relatorio', exigir('admin', 'conselho'), a(async (req, res) => {
   const [I, F] = [ini.toISOString(), fim.toISOString()];
 
   const [chamados, reclamacoes, entradas, avisos, ativosAgora] = await Promise.all([
-    db.from('chamados').select('id, categoria, status, criado_em, resolvido_em, titulo').gte('criado_em', I).lt('criado_em', F).then(ok),
+    db.from('chamados').select('id, categoria, status, criado_em, resolvido_em, titulo, avaliacao').gte('criado_em', I).lt('criado_em', F).then(ok),
     db.from('reclamacoes').select('tipo, unidade_alvo, status').gte('criado_em', I).lt('criado_em', F).then(ok),
-    db.from('mensagens').select('morador_id').eq('direcao', 'entrada').gte('criado_em', I).lt('criado_em', F).limit(20000).then(ok),
+    db.from('mensagens').select('morador_id').eq('direcao', 'entrada').not('morador_id', 'is', null).gte('criado_em', I).lt('criado_em', F).limit(20000).then(ok),
     contar('avisos', (q) => q.gte('criado_em', I).lt('criado_em', F).neq('status', 'rascunho')),
     contar('chamados', (q) => q.in('status', ['aberto', 'em_andamento'])),
   ]);
@@ -143,9 +143,25 @@ router.get('/relatorio', exigir('admin', 'conselho'), a(async (req, res) => {
       unidadesReincidentes: Object.entries(porUnidade).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1]),
       mensagens: entradas.length,
       moradoresAtendidos: new Set(entradas.map((e) => e.morador_id).filter(Boolean)).size,
+      notas: chamados.filter((c) => c.avaliacao).length,
+      notaMedia: (() => { const n = chamados.filter((c) => c.avaliacao); return n.length ? n.reduce((s, c) => s + c.avaliacao, 0) / n.length : null; })(),
       avisos,
     },
   });
 }));
 
+// ---------- Assistente da administração (chat no painel) ----------
+router.get('/assistente', exigir('admin'), a(async (req, res) => {
+  const { historicoPainel } = require('../agente_admin');
+  res.render('assistente', { titulo: 'Assistente', historico: await historicoPainel(req.session.usuario.id) });
+}));
+
+router.post('/assistente', exigir('admin'), a(async (req, res) => {
+  const texto = String(req.body.texto || '').trim().slice(0, 2000);
+  if (!texto) return res.json({ resposta: '' });
+  const { atenderAdminPainel } = require('../agente_admin');
+  res.json({ resposta: await atenderAdminPainel(req.session.usuario, texto) });
+}));
+
+router.panorama = panorama;
 module.exports = router;

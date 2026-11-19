@@ -92,6 +92,43 @@ async function enviarTexto(numero, texto, { digitando = true } = {}) {
   return chamar('/send/text', { method: 'POST', body: { number: soDigitos(alvo), text: texto, delay } });
 }
 
+// Envia uma foto (buffer) com legenda para uma pessoa
+async function enviarFoto(numero, buffer, legenda = '') {
+  const alvo = String(numero || '');
+  if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: fotos só no privado.');
+  return chamar('/send/media', { method: 'POST', body: { number: soDigitos(alvo), type: 'image', file: buffer.toString('base64'), text: legenda } });
+}
+
+// Posta no grupo dos moradores. Só aceita o grupo configurado no painel.
+async function enviarNoGrupo(grupoJid, texto) {
+  if (!grupoJid || !grupoJid.endsWith('@g.us')) throw new Error('Nenhum grupo dos moradores configurado.');
+  return chamar('/send/text', { method: 'POST', body: { number: grupoJid, text: texto, delay: 1500 } });
+}
+
+// Baixa a mídia de uma mensagem recebida (áudio vem em MP3)
+async function baixarMidia(ids) {
+  let ultimoErro;
+  for (const id of ids.filter(Boolean)) {
+    try {
+      const json = await chamar('/message/download', { method: 'POST', body: { id, return_link: true, generate_mp3: true } });
+      if (!json.fileURL) throw new Error('Sem arquivo na resposta');
+      const res = await fetch(json.fileURL, { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error(`Download respondeu ${res.status}`);
+      return { buffer: Buffer.from(await res.arrayBuffer()), mime: json.mimetype || res.headers.get('content-type') || '' };
+    } catch (e) { ultimoErro = e; }
+  }
+  throw ultimoErro || new Error('Mensagem sem id');
+}
+
+// Identifica áudio e imagem pelo tipo informado pela Uazapi
+function tipoDeMidia(m) {
+  const t = `${m.messageType || ''} ${m.mediaType || ''} ${m.content?.mimetype || ''}`.toLowerCase();
+  if (/audio|ptt|voice/.test(t)) return 'audio';
+  if (/sticker/.test(t)) return null;
+  if (/image|imagem/.test(t)) return 'imagem';
+  return null;
+}
+
 // Converte o corpo do webhook em algo simples para o sistema
 function lerWebhook(body) {
   const tipo = body?.EventType || body?.event || body?.type;
@@ -113,8 +150,9 @@ function lerWebhook(body) {
     nome: m.senderName || body.chat?.wa_name || body.chat?.name || '',
     texto,
     tipoMensagem: m.messageType || '',
-    id: m.messageid || m.id || '',
+    midia: tipoDeMidia(m),
+    ids: [m.id, m.messageid],
   };
 }
 
-module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, lerWebhook };
+module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook };

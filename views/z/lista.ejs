@@ -1,0 +1,38 @@
+<%- include('_topo', { voltar: null }) %>
+<% const rotPri = { urgente: 'URGENTE', alta: 'Importante', normal: '', baixa: '' };
+   const tempo = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 60 ? `há ${m} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} dia(s)`; }; %>
+
+<nav class="abas" aria-label="Situação dos chamados">
+  <a href="/z?aba=fazer" class="<%= aba === 'fazer' ? 'ativa' : '' %>"><b><%= fazer.length %></b>A fazer</a>
+  <a href="/z?aba=fazendo" class="<%= aba === 'fazendo' ? 'ativa' : '' %>"><b><%= fazendo.length %></b>Fazendo</a>
+  <a href="/z?aba=feito" class="<%= aba === 'feito' ? 'ativa' : '' %>"><b><%= feito.length %></b>Feito</a>
+</nav>
+
+<% if (!lista.length) { %>
+  <div class="vazio">
+    <%- icone('check') %>
+    <p><%= aba === 'fazer' ? 'Nenhum chamado esperando. Tudo em dia!' : aba === 'fazendo' ? 'Nada em andamento agora.' : 'Nada concluído nos últimos 7 dias.' %></p>
+  </div>
+<% } %>
+
+<div class="cartoes">
+  <% for (const c of lista) { %>
+    <a class="cz <%= c.prioridade %>" href="/z/<%= c.id %>">
+      <% if (rotPri[c.prioridade] && aba !== 'feito') { %><span class="selo <%= c.prioridade %>"><%= rotPri[c.prioridade] %></span><% } %>
+      <b class="cz-titulo"><%= c.titulo %></b>
+      <span class="cz-local"><%- icone('local') %><%= c.local || 'Local não informado' %></span>
+      <span class="cz-rodape">
+        <span>Nº <%= c.id %> · <%= aba === 'feito' ? 'feito ' + tempo(c.resolvido_em) : tempo(c.criado_em) %></span>
+        <% if (c.foto) { %><span class="cz-foto"><%- icone('camera') %>foto</span><% } %>
+      </span>
+    </a>
+  <% } %>
+</div>
+
+<a class="fab" href="/z/novo"><%- icone('mais') %>Avisar problema</a>
+<script>
+// Atualiza a lista sozinha a cada 30 segundos e quando o app volta para a tela
+setInterval(() => location.reload(), 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) location.reload(); });
+</script>
+<%- include('_rodape') %>

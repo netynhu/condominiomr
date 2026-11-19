@@ -1,5 +1,8 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const { env } = require('../config');
+const { enviar } = require('../servicos');
 const { db, ok, getConfig, setConfig } = require('../db');
 const { normalizarTelefone } = require('../util');
 const { a, exigir, avisar } = require('./comum');
@@ -128,8 +131,28 @@ router.get('/equipe', admin, a(async (req, res) => {
   res.render('equipe', { titulo: 'Equipe e acessos', usuarios });
 }));
 
+// Gera um link de acesso sem senha (bom para o zelador) e manda pelo WhatsApp
+router.post('/equipe/:id/link', admin, a(async (req, res) => {
+  const token = crypto.randomBytes(24).toString('hex');
+  const u = ok(await db.from('usuarios').update({ token_acesso: token }).eq('id', req.params.id).select('nome, telefone, perfil').single());
+  const cfg = await getConfig();
+  const link = `${env.APP_URL}/entrar/${token}`;
+  let enviado = false;
+  if (u.telefone) {
+    enviado = await enviar(u.telefone, `Olá, ${u.nome.split(' ')[0]}! Este é o seu acesso ao app ${u.perfil === 'zelador' ? 'do zelador' : 'do condomínio'} do ${cfg.nome_predio}.\n\n👉 ${link}\n\nToque no link para entrar. Depois, no menu do navegador, escolha "Adicionar à tela inicial" para ter o ícone no celular. Não compartilhe este link.`);
+  }
+  avisar(req, enviado ? `Link enviado para o WhatsApp de ${u.nome}. Links antigos deixaram de funcionar.` : `Link de ${u.nome} (cadastre o WhatsApp para enviar automaticamente): ${link}`, enviado ? 'ok' : 'erro');
+  res.redirect('/equipe');
+}));
+
 router.post('/equipe', admin, a(async (req, res) => {
-  const { id, nome, email, perfil, senha, telefone } = req.body;
+  const { id, nome, perfil, telefone } = req.body;
+  let { email, senha } = req.body;
+  // O zelador pode entrar só pelo link: e-mail e senha viram opcionais para ele
+  if (!id && perfil === 'zelador') {
+    if (!email) email = `zelador.${crypto.randomBytes(4).toString('hex')}@sem-email.local`;
+    if (!senha) senha = crypto.randomBytes(12).toString('hex');
+  }
   const dados = { nome, email: String(email || '').trim().toLowerCase(), perfil, telefone: normalizarTelefone(telefone) || null };
   if (id) {
     dados.ativo = req.body.ativo === 'on';
@@ -154,6 +177,7 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   const campos = ['nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras'];
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
+  v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
   await setConfig(v);
   avisar(req, 'Configurações salvas.');
   res.redirect('/configuracoes');

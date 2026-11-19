@@ -1,0 +1,54 @@
+<%- include('_topo', { voltar: '/z' }) %>
+
+<form id="form-novo" class="passos">
+  <section class="passo">
+    <h2><span class="num">1</span>Onde é o problema?</h2>
+    <div class="locais" role="radiogroup" aria-label="Local do problema">
+      <% for (const [k, nome] of LOCAIS) { %>
+        <label class="local">
+          <input type="radio" name="local" value="<%= k %>" required>
+          <span><%- icone(k) %><%= nome %></span>
+        </label>
+      <% } %>
+    </div>
+  </section>
+
+  <section class="passo">
+    <h2><span class="num">2</span>Foto <small>(se puder)</small></h2>
+    <label class="botao-foto">
+      <input type="file" accept="image/*" capture="environment" id="foto" hidden>
+      <span id="foto-texto"><%- icone('camera') %>Tirar foto</span>
+      <img id="foto-previa" alt="" hidden>
+    </label>
+  </section>
+
+  <section class="passo">
+    <h2><span class="num">3</span>O que aconteceu? <small>(se quiser)</small></h2>
+    <textarea id="texto" rows="3" placeholder="Ex.: lâmpada queimada perto da porta"></textarea>
+  </section>
+
+  <div class="acao-fixa">
+    <button class="botao-grande verde" type="submit" id="btn-enviar"><%- icone('check') %>Enviar</button>
+  </div>
+</form>
+
+<script src="/static/foto.js?v=1"></script>
+<script>
+(function () {
+  let foto = null;
+  ligarFoto('foto', 'foto-previa', 'foto-texto', (d) => { foto = d; });
+  document.getElementById('form-novo').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const local = (document.querySelector('input[name=local]:checked') || {}).value;
+    if (!local) { alert('Toque em onde é o problema.'); return; }
+    const b = document.getElementById('btn-enviar'); b.disabled = true; b.textContent = 'Enviando...';
+    try {
+      const r = await fetch('/z/novo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ local, foto, texto: document.getElementById('texto').value }) });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error();
+      location.href = '/z/' + j.id;
+    } catch { b.disabled = false; b.textContent = 'Tentar de novo'; alert('Não deu certo. Confira a internet e tente de novo.'); }
+  });
+})();
+</script>
+<%- include('_rodape') %>

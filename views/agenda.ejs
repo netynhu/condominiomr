@@ -43,8 +43,8 @@
       </label>
     </div>
     <label>Detalhes<textarea name="descricao" id="descricao"><%= e.descricao || '' %></textarea></label>
-    <label class="check"><input type="checkbox" name="avisar_vespera" id="avisar_vespera" <%= editar ? (e.avisar_vespera ? 'checked' : '') : 'checked' %>> Lembrar os moradores 24 horas antes</label>
-    <label class="check"><input type="checkbox" name="avisar_agora" id="avisar_agora"> Avisar os moradores agora também</label>
+    <label class="check"><input type="checkbox" name="avisar_vespera" id="avisar_vespera" <%= editar ? (e.avisar_vespera ? 'checked' : '') : 'checked' %>> Lembrar no grupo 24 horas antes</label>
+    <label class="check"><input type="checkbox" name="avisar_agora" id="avisar_agora"> Postar no grupo agora também</label>
     <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/agenda">Cancelar</a><% } %></div>
   </form>
 </div>

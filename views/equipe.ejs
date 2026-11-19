@@ -1,44 +1,79 @@
 <%- include('partials/topo') %>
 <% const perfis = { admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' }; %>
 <div class="cabeca">
-  <div><h1>Equipe e acessos</h1><p class="muted">Quem entra no painel. Cada perfil vê só a sua parte.</p></div>
+  <div><h1>Equipe e acessos</h1><p class="muted">Quem entra no sistema. Cada perfil vê só a sua parte. O zelador entra pelo link enviado no WhatsApp, sem senha.</p></div>
 </div>
 
 <div class="grade2">
   <div class="tabela">
     <table>
-      <thead><tr><th>Nome</th><th>Perfil</th><th>E-mail</th><th>Situação</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Perfil</th><th>WhatsApp</th><th>Situação</th><th></th></tr></thead>
       <tbody>
-        <% for (const x of usuarios) { %>
+        <% for (const x of usuarios) { const semEmail = x.email.endsWith('@sem-email.local'); %>
           <tr>
-            <td><%= x.nome %></td><td><%= perfis[x.perfil] %></td><td><%= x.email %></td><td><%= x.ativo ? 'Ativo' : 'Bloqueado' %></td>
-            <td><details><summary class="small">Editar</summary>
-              <form class="campos" method="post" action="/equipe" style="margin-top:8px;min-width:220px">
-                <input type="hidden" name="id" value="<%= x.id %>">
-                <input name="nome" value="<%= x.nome %>" required>
-                <input type="email" name="email" value="<%= x.email %>" required>
-                <select name="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= x.perfil === k ? 'selected' : '' %>><%= n %></option><% } %></select>
-                <input name="telefone" value="<%= x.telefone || '' %>" placeholder="WhatsApp (opcional)">
-                <input type="password" name="senha" placeholder="Nova senha (deixe vazio para manter)" autocomplete="new-password">
-                <label class="check"><input type="checkbox" name="ativo" <%= x.ativo ? 'checked' : '' %>> Ativo</label>
-                <button class="btn peq" type="submit">Salvar</button>
-              </form>
-            </details></td>
+            <td><b><%= x.nome %></b><div class="small muted"><%= semEmail ? 'entra pelo link' : x.email %></div></td>
+            <td><%= perfis[x.perfil] %></td>
+            <td class="num"><%= x.telefone ? u.formatarTelefone(x.telefone) : '-' %></td>
+            <td><span class="tag <%= x.ativo ? 'resolvido' : '' %>"><%= x.ativo ? 'Ativo' : 'Bloqueado' %></span></td>
+            <td>
+              <div class="acoes">
+                <% if (x.ativo) { %>
+                <form method="post" action="/equipe/<%= x.id %>/link" data-confirmar="Gerar um novo link de acesso para <%= x.nome %>? O link anterior deixa de funcionar.">
+                  <button class="btn sec peq" type="submit">Enviar link de acesso</button>
+                </form>
+                <% } %>
+                <details><summary class="small">Editar</summary>
+                  <form class="campos" method="post" action="/equipe" style="margin-top:8px;min-width:220px">
+                    <input type="hidden" name="id" value="<%= x.id %>">
+                    <input name="nome" value="<%= x.nome %>" required>
+                    <input type="email" name="email" value="<%= x.email %>" required>
+                    <select name="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= x.perfil === k ? 'selected' : '' %>><%= n %></option><% } %></select>
+                    <input name="telefone" value="<%= x.telefone || '' %>" placeholder="WhatsApp">
+                    <input type="password" name="senha" placeholder="Nova senha (deixe vazio para manter)" autocomplete="new-password">
+                    <label class="check"><input type="checkbox" name="ativo" <%= x.ativo ? 'checked' : '' %>> Ativo</label>
+                    <button class="btn peq" type="submit">Salvar</button>
+                  </form>
+                </details>
+              </div>
+            </td>
           </tr>
         <% } %>
       </tbody>
     </table>
   </div>
 
-  <form class="card campos" method="post" action="/equipe">
+  <form class="card campos" method="post" action="/equipe" id="form-novo">
     <h2>Novo acesso</h2>
+    <label>Perfil<select name="perfil" id="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= k === 'zelador' ? 'selected' : '' %>><%= n %></option><% } %></select></label>
     <label>Nome<input name="nome" id="nome" required></label>
-    <label>E-mail<input type="email" name="email" id="email" required></label>
-    <label>Perfil<select name="perfil" id="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>"><%= n %></option><% } %></select></label>
-    <label>WhatsApp (opcional)<input name="telefone" id="telefone" inputmode="tel"></label>
-    <label>Senha inicial (mínimo 8)<input type="password" name="senha" id="senha" minlength="8" required autocomplete="new-password"></label>
+    <label>WhatsApp<input name="telefone" id="telefone" inputmode="tel" placeholder="(11) 99999-8888"></label>
+    <div id="campos-senha" class="campos" style="display:flex;flex-direction:column;gap:14px">
+      <label>E-mail<input type="email" name="email" id="email"></label>
+      <label>Senha inicial (mínimo 8)<input type="password" name="senha" id="senha" minlength="8" autocomplete="new-password"></label>
+    </div>
     <button class="btn" type="submit">Criar acesso</button>
-    <p class="small muted">Zelador: só chamados, em tela de celular. Portaria: só reclamações, sem ver quem reclamou. Conselho: relatório e radar, só leitura.</p>
+    <p class="small muted" id="dica"></p>
   </form>
 </div>
+<script>
+(function () {
+  const perfil = document.getElementById('perfil');
+  const dicas = {
+    zelador: 'O zelador não precisa de e-mail nem senha. Depois de criar, clique em "Enviar link de acesso": ele recebe o link no WhatsApp e fica conectado no celular. Ele também recebe os chamados novos nesse número.',
+    admin: 'Acesso completo ao painel.',
+    portaria: 'Vê só as reclamações, sem saber quem reclamou.',
+    conselho: 'Vê o relatório e o radar do grupo, só leitura.',
+  };
+  function atualizar() {
+    const z = perfil.value === 'zelador';
+    document.getElementById('campos-senha').style.display = z ? 'none' : 'flex';
+    document.getElementById('email').required = !z;
+    document.getElementById('senha').required = !z;
+    document.getElementById('telefone').required = z;
+    document.getElementById('dica').textContent = dicas[perfil.value];
+  }
+  perfil.addEventListener('change', atualizar);
+  atualizar();
+})();
+</script>
 <%- include('partials/rodape') %>

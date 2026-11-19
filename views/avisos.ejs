@@ -1,7 +1,7 @@
 <%- include('partials/topo') %>
 <% const rot = { rascunho: 'Rascunho', enviando: 'Enviando', enviado: 'Enviado' }; %>
 <div class="cabeca">
-  <div><h1>Avisos</h1><p class="muted">Cada morador recebe o aviso no privado, com o próprio nome. As mensagens saem aos poucos, das <%= process.env.ENVIO_HORA_INICIO || 8 %>h às <%= process.env.ENVIO_HORA_FIM || 21 %>h, para proteger o número.</p></div>
+  <div><h1>Avisos</h1><p class="muted">Avisos oficiais do condomínio. O padrão é postar uma mensagem no grupo dos moradores. O envio no privado sai aos poucos, das <%= process.env.ENVIO_HORA_INICIO || 8 %>h às <%= process.env.ENVIO_HORA_FIM || 21 %>h, para proteger o número.</p></div>
 </div>
 
 <div class="grade2">
@@ -10,7 +10,11 @@
       <h2>Novo aviso</h2>
       <label>Título<input name="titulo" id="titulo" required placeholder="Limpeza da caixa d'água"></label>
       <label>Texto<textarea name="texto" id="texto" required placeholder="Use {nome} para escrever o nome do morador. Sem {nome}, o sistema começa com &quot;Olá, nome!&quot;."></textarea></label>
-      <label>Para quem
+      <div class="linha-campos">
+        <label class="check" style="border:1px solid var(--line);border-radius:10px;padding:12px"><input type="radio" name="canal" value="grupo" checked> <span><b>Postar no grupo</b><br><span class="small muted">Uma mensagem só, no grupo dos moradores<%= cfg.grupo_nome ? ` (${cfg.grupo_nome})` : '' %>. Recomendado.</span></span></label>
+        <label class="check" style="border:1px solid var(--line);border-radius:10px;padding:12px"><input type="radio" name="canal" value="privado"> <span><b>No privado de cada um</b><br><span class="small muted">Para um bloco só ou assunto reservado. Sai aos poucos.</span></span></label>
+      </div>
+      <label id="campo-publico" hidden>Para quem
         <select name="publico" id="publico">
           <option value="todos">Todos os moradores</option>
           <% for (const b of blocos) { %><option value="bloco:<%= b %>">Só o bloco <%= b %></option><% } %>
@@ -29,8 +33,8 @@
         <% for (const av of lista) { %>
           <div class="item">
             <div><b><%= av.titulo %></b> <span class="tag <%= av.status %>"><%= rot[av.status] %></span>
-              <div class="small muted"><%= av.publico === 'todos' ? 'Todos' : 'Bloco ' + av.publico.slice(6) %> · <%= u.dataHora(av.criado_em) %> · <%= av.criado_por || '' %></div>
-              <% if (av.status !== 'rascunho') { %><div class="small"><%= av.enviados %> de <%= av.total %> entregues ao WhatsApp<%= av.erros ? `, ${av.erros} com erro` : '' %></div><% } %>
+              <div class="small muted"><%= av.canal === 'grupo' ? 'No grupo' : 'No privado · ' + (av.publico === 'todos' ? 'todos' : 'bloco ' + av.publico.slice(6)) %> ·<%= u.dataHora(av.criado_em) %> · <%= av.criado_por || '' %></div>
+              <% if (av.status !== 'rascunho' && av.canal !== 'grupo') { %><div class="small"><%= av.enviados %> de <%= av.total %> entregues ao WhatsApp<%= av.erros ? `, ${av.erros} com erro` : '' %></div><% } %>
             </div>
             <% if (av.status === 'rascunho') { %>
               <div class="acoes">
@@ -55,8 +59,12 @@
   </div>
 </div>
 <script>
+document.querySelectorAll('input[name=canal]').forEach((r) => r.addEventListener('change', () => {
+  document.getElementById('campo-publico').hidden = document.querySelector('input[name=canal]:checked').value !== 'privado';
+}));
 document.getElementById('form-aviso').addEventListener('submit', (e) => {
-  if (e.submitter && e.submitter.dataset.c && !confirm('Enviar este aviso agora para os moradores escolhidos?')) e.preventDefault();
+  const grupo = document.querySelector('input[name=canal]:checked').value === 'grupo';
+  if (e.submitter && e.submitter.dataset.c && !confirm(grupo ? 'Postar este aviso agora no grupo dos moradores?' : 'Enviar este aviso agora no privado dos moradores escolhidos?')) e.preventDefault();
 });
 document.getElementById('btn-ia').addEventListener('click', (e) => ocupado(e.target, async () => {
   const tipo = document.getElementById('tipo').value;

@@ -86,8 +86,9 @@ router.get('/avisos', exigir('admin'), a(async (req, res) => {
 
 router.post('/avisos', exigir('admin'), a(async (req, res) => {
   const { titulo, texto, publico, acao } = req.body;
+  const canal = req.body.canal === 'privado' ? 'privado' : 'grupo';
   if (!titulo || !texto) { avisar(req, 'Preencha título e texto.', 'erro'); return res.redirect('/avisos'); }
-  const av = ok(await db.from('avisos').insert({ titulo, texto, publico: publico || 'todos', criado_por: req.session.usuario.nome }).select().single());
+  const av = ok(await db.from('avisos').insert({ titulo, texto, canal, publico: canal === 'grupo' ? 'todos' : (publico || 'todos'), criado_por: req.session.usuario.nome }).select().single());
   if (acao === 'enviar') return enviarAviso(req, res, av);
   avisar(req, 'Rascunho salvo.');
   res.redirect('/avisos');
@@ -100,6 +101,16 @@ router.post('/avisos/:id/enviar', exigir('admin'), a(async (req, res) => {
 }));
 
 async function enviarAviso(req, res, av) {
+  if (av.canal === 'grupo') {
+    try {
+      await sv.postarNoGrupo(av.titulo, av.texto);
+      ok(await db.from('avisos').update({ status: 'enviado', total: 1, enviado_em: new Date().toISOString() }).eq('id', av.id));
+      avisar(req, 'Aviso postado no grupo dos moradores.');
+    } catch (e) {
+      avisar(req, `Não foi possível postar no grupo: ${e.message}. O aviso ficou salvo como rascunho.`, 'erro');
+    }
+    return res.redirect('/avisos');
+  }
   const total = await sv.enfileirar(av.publico, `${av.titulo}\n\n${av.texto}`, av.id);
   ok(await db.from('avisos').update({ status: total ? 'enviando' : 'enviado', total }).eq('id', av.id));
   avisar(req, total ? `Aviso na fila para ${total} moradores. As mensagens saem aos poucos, no horário permitido.` : 'Nenhum morador para este público.', total ? 'ok' : 'erro');
@@ -112,6 +123,8 @@ router.post('/avisos/:id/excluir', exigir('admin'), a(async (req, res) => {
 }));
 
 // ---------- Agenda ----------
+const tituloEvento = (e) => `${e.publico && e.publico.startsWith('bloco:') ? `Bloco ${e.publico.slice(6)} · ` : ''}${e.titulo}`;
+const textoEvento = (e) => `🗓️ ${require('../util').dataExtenso(e.inicio)}${e.fim ? ` até ${require('../util').dataExtenso(e.fim)}` : ''}${e.local ? `\n📍 ${e.local}` : ''}${e.descricao ? `\n\n${e.descricao}` : ''}`;
 router.get('/agenda', exigir('admin'), a(async (req, res) => {
   const desde = new Date(Date.now() - 7 * 86400000).toISOString();
   const lista = ok(await db.from('eventos').select('*').gte('inicio', desde).order('inicio'));
@@ -130,8 +143,10 @@ router.post('/agenda', exigir('admin'), a(async (req, res) => {
   if (b.id) ok(await db.from('eventos').update({ ...dados, lembrete_enviado: false }).eq('id', b.id));
   else ok(await db.from('eventos').insert(dados));
   if (b.avisar_agora === 'on') {
-    const n = await sv.enfileirar(dados.publico, `Agenda do condomínio: ${dados.titulo}\nQuando: ${require('../util').dataExtenso(dados.inicio)}${dados.local ? `\nOnde: ${dados.local}` : ''}${dados.descricao ? `\n\n${dados.descricao}` : ''}`);
-    avisar(req, `Evento salvo e aviso na fila para ${n} moradores.`);
+    try {
+      await sv.postarNoGrupo(tituloEvento(dados), textoEvento(dados));
+      avisar(req, 'Evento salvo e postado no grupo dos moradores.');
+    } catch (e) { avisar(req, `Evento salvo, mas não foi possível postar no grupo: ${e.message}`, 'erro'); }
   } else avisar(req, 'Evento salvo. O assistente já sabe dele.');
   res.redirect('/agenda');
 }));

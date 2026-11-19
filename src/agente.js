@@ -1,9 +1,12 @@
 // O assistente que conversa com cada morador no privado
 const { db, ok, getConfig } = require('./db');
 const { env } = require('./config');
+const { toFile } = require('openai');
 const { openai, completar } = require('./ia');
 const sv = require('./servicos');
-const { rotuloUnidade, dataExtenso, primeiroNome, normalizarTelefone, dataHora } = require('./util');
+const uazapi = require('./uazapi');
+const { salvarFoto } = require('./fotos');
+const { rotuloUnidade, dataExtenso, primeiroNome, normalizarTelefone, dataHora, hojeParaIA } = require('./util');
 
 const LIMITE_DOCS = 40000; // caracteres de regimento/convenção enviados ao modelo
 const HISTORICO = 16;      // mensagens anteriores lembradas na conversa
@@ -96,9 +99,10 @@ async function executar(nome, args, ctx) {
   const { morador } = ctx;
   switch (nome) {
     case 'abrir_chamado': {
-      const ch = await sv.abrirChamado({ morador, ...args, categoria: args.categoria || 'manutencao' });
+      const ch = await sv.abrirChamado({ morador, ...args, categoria: args.categoria || 'manutencao', foto: ctx.foto || null });
       ctx.acoes.push(`chamado ${ch.id}`);
-      return { ok: true, numero: ch.id };
+      if (ctx.foto) ctx.limparFoto?.();
+      return { ok: true, numero: ch.id, foto_anexada: Boolean(ctx.foto) };
     }
     case 'consultar_meus_chamados': {
       const l = ok(await db.from('chamados').select('id, titulo, status, criado_em, observacao_equipe').eq('morador_id', morador.id).order('criado_em', { ascending: false }).limit(6));
@@ -175,7 +179,7 @@ async function montarParteVariavel(morador) {
     db.from('memoria').select('fato, criado_em').eq('morador_id', morador.id).order('criado_em', { ascending: false }).limit(40).then(ok),
     db.from('chamados').select('id, titulo, status').eq('morador_id', morador.id).in('status', ['aberto', 'em_andamento']).limit(10).then(ok),
   ]);
-  return `Agora: ${dataExtenso(new Date().toISOString())} (horário de Brasília).
+  return `Hoje: ${hojeParaIA()}.
 
 QUEM ESTÁ FALANDO
 Nome: ${morador.nome} (primeiro nome: ${primeiroNome(morador.nome)})
@@ -196,20 +200,26 @@ function registrarUso(uso) {
   console.log(`[agente] tokens: entrada ${uso.prompt_tokens} (cache ${cache}, ${pct}%), saída ${uso.completion_tokens}`);
 }
 
-async function responder(morador, texto) {
+async function responder(morador, texto, { foto = null, limparFoto } = {}) {
   const cfg = await getConfig();
   const anteriores = ok(await db.from('mensagens').select('direcao, texto').eq('telefone', morador.telefone).order('criado_em', { ascending: false }).limit(HISTORICO + 1)).reverse();
   // A última mensagem de entrada é a atual (já gravada); o restante é o histórico
   if (anteriores.length && anteriores[anteriores.length - 1].direcao === 'entrada') anteriores.pop();
 
+  let variavel = await montarParteVariavel(morador);
+  if (!anteriores.some((m) => m.direcao === 'entrada')) {
+    variavel += `\n\nPRIMEIRA CONVERSA: apresente-se como ${cfg.nome_assistente} e diga em até 3 linhas curtas o que você faz (abre chamados de manutenção, registra reclamações sem expor quem reclamou, tira dúvidas sobre as regras do prédio e avisa sobre eventos e obras). Depois responda ao que a pessoa pediu.`;
+  }
+  if (foto) variavel += '\n\nO morador acabou de mandar uma foto. Se você abrir um chamado agora, ela é anexada automaticamente; diga isso a ele.';
+
   const mensagens = [
     { role: 'system', content: await montarParteFixa(cfg) },
-    { role: 'system', content: await montarParteVariavel(morador) },
+    { role: 'system', content: variavel },
     ...anteriores.map((m) => ({ role: m.direcao === 'entrada' ? 'user' : 'assistant', content: m.texto })),
     { role: 'user', content: texto },
   ];
 
-  const ctx = { morador, acoes: [] };
+  const ctx = { morador, acoes: [], foto, limparFoto };
   const tools = FERRAMENTAS.map((f) => ({ type: 'function', function: f }));
 
   for (let volta = 0; volta < 6; volta++) {
@@ -249,35 +259,114 @@ async function atualizarResumo(morador) {
   if (resumo) await db.from('moradores').update({ resumo_perfil: resumo }).eq('id', morador.id);
 }
 
-// Entrada principal: chamada pelo webhook para cada mensagem privada
-async function receberMensagemPrivada({ telefone, nome, texto, tipoMensagem }) {
-  const tel = normalizarTelefone(telefone);
-  if (!tel) return;
-  return emSequencia(tel, async () => {
-    const morador = await sv.acharMorador(tel);
 
-    if (!morador || !morador.ativo) {
-      const existente = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
-      const responderAgora = !existente || Date.now() - new Date(existente.atualizado_em).getTime() > 12 * 3600000;
-      await db.from('contatos_pendentes').upsert({
-        telefone: tel, nome_whatsapp: nome || existente?.nome_whatsapp || null, ultima_mensagem: (texto || `[${tipoMensagem}]`).slice(0, 500),
-        vezes: (existente?.vezes || 0) + 1, atualizado_em: new Date().toISOString(),
-      });
-      if (responderAgora) {
-        const cfg = await getConfig();
-        await sv.enviar(tel, `Olá! Sou o assistente virtual do ${cfg.nome_predio}. Ainda não encontrei este número no cadastro de moradores. Já avisei a administração, que vai confirmar seus dados. Assim que for liberado, eu te atendo por aqui.`);
-      }
+// ================== Entrada das mensagens privadas ==================
+
+const ESPERA_MS = 8000;        // espera a pessoa terminar de digitar (mensagens picadas)
+const ESPERA_MAX_MS = 20000;   // nunca espera mais que isso desde a primeira mensagem
+const LIMITE_POR_HORA = 30;    // proteção contra uso abusivo (custo de IA)
+const FOTO_VALIDA_MS = 20 * 60000;
+
+const buffers = new Map();     // telefone -> { partes, timer, inicio, nome, temMidia }
+const fotosPendentes = new Map(); // telefone -> { caminho, em }
+const contagemHora = new Map();   // telefone -> [timestamps]
+
+function dentroDoLimite(tel) {
+  const agora = Date.now();
+  const lista = (contagemHora.get(tel) || []).filter((t) => agora - t < 3600000);
+  lista.push(agora);
+  contagemHora.set(tel, lista);
+  return { ok: lista.length <= LIMITE_POR_HORA, primeiraVezAcima: lista.length === LIMITE_POR_HORA + 1 };
+}
+
+// Áudio: baixa pela Uazapi e transcreve com a OpenAI
+async function transcreverAudio(ids) {
+  const { buffer, mime } = await uazapi.baixarMidia(ids);
+  const nome = /ogg|opus/.test(mime) ? 'audio.ogg' : 'audio.mp3';
+  const r = await openai().audio.transcriptions.create({
+    file: await toFile(buffer, nome, { type: mime || 'audio/mpeg' }),
+    model: env.OPENAI_TRANSCRIBE_MODEL,
+    language: 'pt',
+  });
+  return (r.text || '').trim();
+}
+
+// Foto: baixa e guarda; fica disponível para o próximo chamado aberto por essa pessoa
+async function guardarFotoDoMorador(tel, ids) {
+  const { buffer, mime } = await uazapi.baixarMidia(ids);
+  const caminho = await salvarFoto(buffer, /png/.test(mime) ? 'image/png' : 'image/jpeg', 'moradores');
+  fotosPendentes.set(tel, { caminho, em: Date.now() });
+  return caminho;
+}
+
+function fotoPendente(tel) {
+  const f = fotosPendentes.get(tel);
+  if (!f || Date.now() - f.em > FOTO_VALIDA_MS) return null;
+  return f.caminho;
+}
+
+// Nota de 1 a 5 depois de um chamado resolvido (sem gastar IA)
+async function tratarAvaliacao(morador, texto) {
+  const m = /^\s*(?:nota\s*)?([1-5])\s*(?:estrelas?)?\s*[.!]?\s*$/i.exec(texto);
+  if (!m) return false;
+  const desde = new Date(Date.now() - 3 * 86400000).toISOString();
+  const [ch] = ok(await db.from('chamados').select('id').eq('morador_id', morador.id).is('avaliacao', null)
+    .not('avaliacao_pedida_em', 'is', null).gte('avaliacao_pedida_em', desde).order('avaliacao_pedida_em', { ascending: false }).limit(1));
+  if (!ch) return false;
+  const nota = Number(m[1]);
+  ok(await db.from('chamados').update({ avaliacao: nota }).eq('id', ch.id));
+  await sv.registrarHistoricoChamado(ch.id, `Morador avaliou com nota ${nota}`, morador.nome);
+  const resposta = nota >= 4
+    ? `Obrigado pela nota ${nota}, ${primeiroNome(morador.nome)}! 😊 Qualquer coisa, é só chamar.`
+    : `Obrigado por avaliar, ${primeiroNome(morador.nome)}. Sinto que não foi como esperado. Quer me contar o que podemos melhorar? Vou repassar para a administração.`;
+  await sv.enviar(morador.telefone, resposta, morador.id);
+  if (nota <= 2) await sv.avisarEquipe('sindico', `Avaliação baixa: chamado nº ${ch.id} recebeu nota ${nota} de ${morador.nome} (${rotuloUnidade(morador.unidade)}).`);
+  return true;
+}
+
+async function atenderNaoCadastrado(tel, nome, texto) {
+  const existente = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
+  const responderAgora = !existente || Date.now() - new Date(existente.atualizado_em).getTime() > 12 * 3600000;
+  await db.from('contatos_pendentes').upsert({
+    telefone: tel, nome_whatsapp: nome || existente?.nome_whatsapp || null, ultima_mensagem: String(texto || '[mídia]').slice(0, 500),
+    vezes: (existente?.vezes || 0) + 1, atualizado_em: new Date().toISOString(),
+  });
+  if (responderAgora) {
+    const cfg = await getConfig();
+    await sv.enviar(tel, `Olá! Sou o assistente virtual do ${cfg.nome_predio}. Ainda não encontrei este número no cadastro de moradores. Já avisei a administração, que vai confirmar seus dados. Assim que for liberado, eu te atendo por aqui.`);
+  }
+}
+
+// Processa tudo o que a pessoa mandou de uma vez
+async function processar(tel) {
+  const b = buffers.get(tel);
+  buffers.delete(tel);
+  if (!b) return;
+  const texto = b.partes.filter(Boolean).join('\n').trim();
+  if (!texto) return;
+
+  return emSequencia(tel, async () => {
+    // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
+    const admin = await require('./agente_admin').acharAdmin(tel);
+    if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
+
+    const morador = await sv.acharMorador(tel);
+    if (!morador || !morador.ativo) return atenderNaoCadastrado(tel, b.nome, texto);
+
+    const limite = dentroDoLimite(tel);
+    if (!limite.ok) {
+      if (limite.primeiraVezAcima) await sv.enviar(tel, 'Recebi muitas mensagens em pouco tempo. Vou pausar as respostas automáticas por alguns minutos. Se for urgente, fale com a portaria.', morador.id);
       return;
     }
 
-    const conteudo = texto || (tipoMensagem ? `[o morador enviou uma mensagem do tipo ${tipoMensagem}, sem texto]` : '');
-    if (!conteudo) return;
-    ok(await db.from('mensagens').insert({ morador_id: morador.id, telefone: morador.telefone, direcao: 'entrada', texto: conteudo }));
+    ok(await db.from('mensagens').insert({ morador_id: morador.id, telefone: morador.telefone, direcao: 'entrada', texto }));
     await db.from('moradores').update({ ultima_interacao: new Date().toISOString() }).eq('id', morador.id);
+
+    if (await tratarAvaliacao(morador, texto)) return;
 
     let resposta;
     try {
-      resposta = await responder(morador, conteudo);
+      resposta = await responder(morador, texto, { foto: fotoPendente(tel), limparFoto: () => fotosPendentes.delete(tel) });
     } catch (e) {
       console.error('[agente] erro', e.message);
       resposta = 'Tive um problema técnico agora. Sua mensagem ficou registrada e a administração vai verificar.';
@@ -287,4 +376,61 @@ async function receberMensagemPrivada({ telefone, nome, texto, tipoMensagem }) {
   });
 }
 
-module.exports = { receberMensagemPrivada };
+// Entrada principal: chamada pelo webhook para cada mensagem privada
+async function receberMensagemPrivada({ telefone, nome, texto, midia, ids }) {
+  const tel = normalizarTelefone(telefone);
+  if (!tel) return;
+
+  let parte = texto || '';
+  if (midia === 'audio') {
+    try {
+      const t = await transcreverAudio(ids);
+      parte = t ? `[áudio transcrito] ${t}` : '[o morador mandou um áudio sem fala reconhecível]';
+    } catch (e) {
+      console.error('[agente] áudio', e.message);
+      parte = '[o morador mandou um áudio que não consegui ouvir: peça para escrever ou mandar de novo]';
+    }
+  } else if (midia === 'imagem') {
+    try {
+      await guardarFotoDoMorador(tel, ids);
+      parte = `[o morador enviou uma foto${texto ? ` com a legenda: ${texto}` : ''}. Se for um problema, a foto será anexada ao chamado]`;
+    } catch (e) {
+      console.error('[agente] foto', e.message);
+      parte = texto || '[o morador enviou uma foto que não consegui abrir]';
+    }
+  } else if (!parte) {
+    return; // figurinha, reação, localização etc.: não responde
+  }
+
+  const agora = Date.now();
+  const b = buffers.get(tel) || { partes: [], inicio: agora, nome };
+  b.partes.push(parte);
+  clearTimeout(b.timer);
+  const espera = Math.max(0, Math.min(ESPERA_MS, ESPERA_MAX_MS - (agora - b.inicio)));
+  b.timer = setTimeout(() => processar(tel).catch((e) => console.error('[agente]', e.message)), espera);
+  buffers.set(tel, b);
+}
+
+// ================== Grupo: chamar no privado quem relata um problema ==================
+// O assistente não responde no grupo. Se um morador cadastrado relatar um problema do prédio,
+// ele recebe uma mensagem no privado oferecendo abrir o chamado (no máximo uma vez a cada 24h).
+async function avaliarMensagemDoGrupo(morador, texto) {
+  if (!morador || !morador.ativo || String(texto).length < 12) return;
+  if (morador.abordado_grupo_em && Date.now() - new Date(morador.abordado_grupo_em).getTime() < 24 * 3600000) return;
+
+  let r;
+  try {
+    const bruto = await completar(
+      'Você lê mensagens do grupo de WhatsApp de um condomínio. Diga se a mensagem relata um problema concreto nas áreas comuns ou na estrutura do prédio que a equipe deveria resolver (algo quebrado, vazamento, sujeira, falta de luz/água, portão, elevador, segurança). Conversas, piadas, avisos, vendas e opiniões não contam. Responda só JSON: {"problema": true|false, "resumo": "até 8 palavras, ex.: o portão da garagem travado"}',
+      String(texto).slice(0, 800),
+      { maxTokens: 60, temperatura: 0 },
+    );
+    r = JSON.parse(bruto.replace(/```json|```/g, '').trim());
+  } catch (e) { console.error('[grupo] classificação', e.message); return; }
+  if (!r?.problema || !r.resumo) return;
+
+  await db.from('moradores').update({ abordado_grupo_em: new Date().toISOString() }).eq('id', morador.id);
+  await sv.enviar(morador.telefone, `Oi, ${primeiroNome(morador.nome)}! Vi sua mensagem no grupo sobre ${r.resumo}. Quer que eu abra um chamado para a equipe resolver? É só responder aqui. Se quiser, pode mandar uma foto ou um áudio.`, morador.id);
+}
+
+module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo };

@@ -65,6 +65,18 @@ Crie uma chave em platform.openai.com. O modelo é definido em `OPENAI_MODEL` (p
 7. **Equipe**: crie os acessos do zelador, portaria e conselho.
 8. **Manutenção** e **Agenda**: cadastre os itens e eventos.
 
+## Versão 0.3: zelador, grupo e assistente da administração
+
+> Banco já criado? Rode `supabase/migracoes/003_zelador_fotos_grupo.sql` no SQL Editor. Ele cria as colunas novas e a pasta privada `fotos` no Storage.
+
+- **App do zelador** (`/z`): três abas (A fazer, Fazendo, Feito), **Começar**, **Terminei** com foto e **Avisar problema** em três toques. Pode ser instalado na tela inicial do celular.
+- **Acesso por link:** em Equipe e acessos, crie o zelador só com nome e WhatsApp e clique em **Enviar link de acesso**. Ele entra sem senha e fica conectado por 90 dias.
+- **Chamado novo vai para o WhatsApp do zelador** com o link direto para o chamado. Urgências, e itens de prioridade alta fora do horário (22h às 7h), também vão para o síndico.
+- **Avisos no grupo:** o padrão é postar uma mensagem no grupo dos moradores. Os lembretes de evento da agenda vão para o grupo na véspera. O assistente não conversa no grupo.
+- **Grupo → privado:** quem relata um problema no grupo recebe uma mensagem no privado oferecendo abrir o chamado, no máximo uma vez a cada 24 horas. Liga e desliga em Ajustes do prédio.
+- **Conversa:** espera o morador terminar de digitar, transcreve áudio, anexa a foto ao chamado, apresenta-se na primeira conversa, pede nota de 1 a 5 ao resolver e limita o uso a 30 mensagens por hora.
+- **Assistente da administração:** quem tem perfil Administração e WhatsApp cadastrado em Equipe e acessos manda pedidos ao número do prédio, por texto ou áudio. Exemplo: "coloca aviso de manutenção do elevador na terça, das 9h às 12h". O assistente cria o evento e mostra a prévia do aviso, que só sai depois do "sim". A mesma conversa existe na tela **Assistente** do painel.
+
 ## Rodar no computador
 
 ```bash
