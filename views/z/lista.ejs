@@ -23,7 +23,7 @@
       <span class="cz-local"><%- icone('local') %><%= c.local || 'Local não informado' %></span>
       <span class="cz-rodape">
         <span>Nº <%= c.id %> · <%= aba === 'feito' ? 'feito ' + tempo(c.resolvido_em) : tempo(c.criado_em) %></span>
-        <% if (c.foto) { %><span class="cz-foto"><%- icone('camera') %>foto</span><% } %>
+        <% if (c.foto || c.video) { %><span class="cz-foto"><%- icone('camera') %><%= [c.foto && 'foto', c.video && 'vídeo'].filter(Boolean).join(' + ') %></span><% } %>
       </span>
     </a>
   <% } %>

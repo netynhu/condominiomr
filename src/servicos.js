@@ -1,5 +1,5 @@
 // Regras de negócio usadas pelo agente, pelo painel e pelas rotinas automáticas
-const { db, ok, getConfig } = require('./db');
+const { db, ok, getConfig, inserirMensagem } = require('./db');
 const uazapi = require('./uazapi');
 const { env } = require('./config');
 const { lerFoto } = require('./fotos');
@@ -17,8 +17,8 @@ async function enviar(telefone, texto, moradorId) {
   const tel = normalizarTelefone(telefone);
   if (!tel) return false;
   try {
-    await uazapi.enviarTexto(tel, texto);
-    await db.from('mensagens').insert({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto });
+    const r = await uazapi.enviarTexto(tel, texto);
+    await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto, wa_id: uazapi.idEnviado(r) });
     return true;
   } catch (e) {
     console.error('[envio] falhou para', tel, e.message);
@@ -52,11 +52,13 @@ function foraDoHorario() {
   return hora < 7 || hora >= 22;
 }
 
-async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'normal', categoria = 'manutencao', origem = 'whatsapp', usuarioNome, foto }) {
-  const ch = ok(await db.from('chamados').insert({
+async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'normal', categoria = 'manutencao', origem = 'whatsapp', usuarioNome, foto, video }) {
+  const dados = {
     morador_id: morador?.id || null, titulo, descricao, local, prioridade, categoria, origem, foto: foto || null,
     aberto_por: usuarioNome || (morador ? morador.nome : 'Assistente'),
-  }).select().single());
+  };
+  if (video) dados.video = video; // só envia a coluna quando há vídeo (migração 004)
+  const ch = ok(await db.from('chamados').insert(dados).select().single());
   await registrarHistoricoChamado(ch.id, 'Chamado aberto', usuarioNome || (morador ? morador.nome : 'Assistente'));
 
   const quem = morador ? `${morador.nome} (${rotuloUnidade(morador.unidade)})` : (usuarioNome || 'Administração');
@@ -69,7 +71,8 @@ async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'n
   // O zelador recebe o aviso com o link direto para o chamado no app (exceto quando foi ele mesmo que abriu)
   if (origem !== 'zelador') {
     const link = env.APP_URL ? `\n\n👉 Toque para abrir: ${env.APP_URL}/z/${ch.id}` : '';
-    for (const tel of await telefonesZeladores()) await enviar(tel, `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${foto ? '\n📷 Tem foto' : ''}${link}`);
+    const anexos = [foto && '📷 Tem foto', video && '🎥 Tem vídeo'].filter(Boolean).join(' · ');
+    for (const tel of await telefonesZeladores()) await enviar(tel, `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}${link}`);
   }
   if (prioridade === 'urgente' || (prioridade === 'alta' && foraDoHorario())) {
     await avisarEquipe('sindico', `${EMOJI_PRIORIDADE[prioridade]} ${corpo}`);

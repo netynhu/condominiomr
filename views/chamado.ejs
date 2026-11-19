@@ -17,6 +17,7 @@
       <% } else { %>Aberto pela <%= c.origem === 'manutencao_preventiva' ? 'rotina de manutenção preventiva' : 'administração' %><% } %>
     </p>
     <% if (c.observacao_equipe) { %><div class="ia">Observação da equipe: <%= c.observacao_equipe %></div><% } %>
+    <% if (c.video) { %><video src="/foto/<%= c.id %>/video" controls playsinline preload="metadata" style="width:100%;max-height:420px;border-radius:10px;background:#000"></video><% } %>
     <% if (c.foto || c.foto_conclusao) { %>
       <div class="grade" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
         <% if (c.foto) { %><figure style="margin:0"><img src="/foto/<%= c.id %>/problema" alt="Foto do problema" style="width:100%;border-radius:10px;border:1px solid var(--line)"><figcaption class="small muted">Foto do problema</figcaption></figure><% } %>

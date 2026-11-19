@@ -105,29 +105,47 @@ async function enviarNoGrupo(grupoJid, texto) {
   return chamar('/send/text', { method: 'POST', body: { number: grupoJid, text: texto, delay: 1500 } });
 }
 
-// Baixa a mídia de uma mensagem recebida (áudio vem em MP3)
-async function baixarMidia(ids) {
+// Baixa a mídia de uma mensagem recebida (áudio vem em MP3).
+// citada=true baixa a mídia da mensagem que a pessoa citou ao responder.
+async function baixarMidia(ids, { citada = false, limiteBytes = 0 } = {}) {
   let ultimoErro;
   for (const id of ids.filter(Boolean)) {
     try {
-      const json = await chamar('/message/download', { method: 'POST', body: { id, return_link: true, generate_mp3: true } });
+      const json = await chamar('/message/download', { method: 'POST', body: { id, return_link: true, generate_mp3: true, download_quoted: citada } });
       if (!json.fileURL) throw new Error('Sem arquivo na resposta');
-      const res = await fetch(json.fileURL, { signal: AbortSignal.timeout(30000) });
+      const res = await fetch(json.fileURL, { signal: AbortSignal.timeout(90000) });
       if (!res.ok) throw new Error(`Download respondeu ${res.status}`);
+      const tamanho = Number(res.headers.get('content-length') || 0);
+      if (limiteBytes && tamanho > limiteBytes) { const e = new Error('Arquivo grande demais'); e.grande = true; throw e; }
       return { buffer: Buffer.from(await res.arrayBuffer()), mime: json.mimetype || res.headers.get('content-type') || '' };
-    } catch (e) { ultimoErro = e; }
+    } catch (e) { if (e.grande) throw e; ultimoErro = e; }
   }
   throw ultimoErro || new Error('Mensagem sem id');
 }
 
-// Identifica áudio e imagem pelo tipo informado pela Uazapi
+// Identifica o tipo de mídia pelo que a Uazapi informa (o nome exato do tipo não é documentado)
 function tipoDeMidia(m) {
-  const t = `${m.messageType || ''} ${m.mediaType || ''} ${m.content?.mimetype || ''}`.toLowerCase();
+  const t = `${m.messageType || ''} ${m.mediaType || ''} ${m.content?.mimetype || m.content?.mimeType || ''}`.toLowerCase();
+  if (/reaction|sticker|protocol|revoked|call/.test(t)) return 'ignorar';
   if (/audio|ptt|voice/.test(t)) return 'audio';
-  if (/sticker/.test(t)) return null;
+  if (/video|ptv|gif/.test(t)) return 'video';
   if (/image|imagem/.test(t)) return 'imagem';
+  if (/document|pdf|application\//.test(t)) return 'documento';
+  if (/location|localiza/.test(t)) return 'localizacao';
+  if (/contact|vcard/.test(t)) return 'contato';
   return null;
 }
+
+// Texto da mensagem citada, quando vem junto no conteúdo bruto (formato varia; tenta os mais comuns)
+function textoCitado(m) {
+  const c = m.content || {};
+  const ctx = c.contextInfo || c.ContextInfo || c.extendedTextMessage?.contextInfo || {};
+  const q = ctx.quotedMessage || ctx.QuotedMessage || m.quotedMessage || {};
+  return String(q.conversation || q.Conversation || q.extendedTextMessage?.text || q.imageMessage?.caption || q.videoMessage?.caption || m.quotedText || '').trim();
+}
+
+// Id da mensagem que acabou de ser enviada (para reconhecer quando o morador responder em cima dela)
+const idEnviado = (json) => json?.messageid || json?.messageId || json?.id || json?.key?.id || null;
 
 // Converte o corpo do webhook em algo simples para o sistema
 function lerWebhook(body) {
@@ -152,7 +170,11 @@ function lerWebhook(body) {
     tipoMensagem: m.messageType || '',
     midia: tipoDeMidia(m),
     ids: [m.id, m.messageid],
+    waId: m.messageid || m.id || '',
+    citadoId: typeof m.quoted === 'string' ? m.quoted : (m.quoted?.id || m.quoted?.messageid || ''),
+    citadoTexto: textoCitado(m),
+    nomeArquivo: m.content?.fileName || m.content?.title || '',
   };
 }
 
-module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook };
+module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };

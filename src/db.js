@@ -49,4 +49,14 @@ async function setConfig(valores) {
   if (linhas.length) ok(await db.from('config').upsert(linhas, { onConflict: 'chave' }));
 }
 
-module.exports = { db, ok, contar, getConfig, setConfig };
+// Grava uma mensagem no histórico. Se a coluna wa_id ainda não existir (migração 004 não rodada), grava sem ela.
+async function inserirMensagem(linha) {
+  let r = await db.from('mensagens').insert(linha);
+  if (r.error && linha.wa_id !== undefined && /wa_id/.test(r.error.message)) {
+    const { wa_id, ...sem } = linha; // eslint-disable-line no-unused-vars
+    r = await db.from('mensagens').insert(sem);
+  }
+  if (r.error) throw new Error(r.error.message);
+}
+
+module.exports = { db, ok, contar, getConfig, setConfig, inserirMensagem };

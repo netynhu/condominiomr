@@ -45,7 +45,7 @@ router.get('/sw.js', (req, res) => res.type('text/javascript').sendFile(path.joi
 router.get('/z', equipe, a(async (req, res) => {
   const aba = ['fazer', 'fazendo', 'feito'].includes(req.query.aba) ? req.query.aba : 'fazer';
   const desde = new Date(Date.now() - 7 * 86400000).toISOString();
-  const base = () => db.from('chamados').select('id, titulo, local, prioridade, status, criado_em, resolvido_em, foto, origem').neq('categoria', 'administracao');
+  const base = () => db.from('chamados').select('*').neq('categoria', 'administracao');
   const [fazer, fazendo, feito] = await Promise.all([
     base().eq('status', 'aberto').order('criado_em').limit(100).then(ok),
     base().eq('status', 'em_andamento').order('atualizado_em').limit(100).then(ok),
@@ -111,11 +111,21 @@ router.post('/z/:id/terminar', equipe, express6mb(), a(async (req, res) => {
 
 // ---------- Fotos (só para quem está logado) ----------
 router.get('/foto/:id/:qual', exigir('admin', 'zelador', 'conselho'), a(async (req, res) => {
-  const c = ok(await db.from('chamados').select('foto, foto_conclusao').eq('id', req.params.id).maybeSingle());
-  const caminho = req.params.qual === 'conclusao' ? c?.foto_conclusao : c?.foto;
+  const c = ok(await db.from('chamados').select('*').eq('id', req.params.id).maybeSingle());
+  const caminho = { conclusao: c?.foto_conclusao, video: c?.video, problema: c?.foto }[req.params.qual];
   if (!caminho) return res.sendStatus(404);
   const { buffer, mime } = await lerFoto(caminho);
-  res.set('Cache-Control', 'private, max-age=86400').type(mime).send(buffer);
+  res.set({ 'Cache-Control': 'private, max-age=86400', 'Accept-Ranges': 'bytes', 'Content-Type': mime });
+  // O iPhone só toca vídeo se o servidor entregar por partes (Range)
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (range) {
+    const total = buffer.length;
+    const ini = range[1] ? Number(range[1]) : Math.max(0, total - Number(range[2]));
+    const fim = range[1] && range[2] ? Math.min(Number(range[2]), total - 1) : total - 1;
+    if (ini >= total || ini > fim) return res.status(416).set('Content-Range', `bytes */${total}`).end();
+    return res.status(206).set('Content-Range', `bytes ${ini}-${fim}/${total}`).send(buffer.subarray(ini, fim + 1));
+  }
+  res.send(buffer);
 }));
 
 function express6mb() {

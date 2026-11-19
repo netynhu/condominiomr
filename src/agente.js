@@ -2,10 +2,11 @@
 const { db, ok, getConfig } = require('./db');
 const { env } = require('./config');
 const { toFile } = require('openai');
-const { openai, completar } = require('./ia');
+const { openai, completar, descreverImagem } = require('./ia');
 const sv = require('./servicos');
 const uazapi = require('./uazapi');
-const { salvarFoto } = require('./fotos');
+const { salvarFoto, salvarVideo, LIMITE_VIDEO } = require('./fotos');
+const { inserirMensagem } = require('./db');
 const { rotuloUnidade, dataExtenso, primeiroNome, normalizarTelefone, dataHora, hojeParaIA } = require('./util');
 
 const LIMITE_DOCS = 40000; // caracteres de regimento/convenção enviados ao modelo
@@ -99,10 +100,10 @@ async function executar(nome, args, ctx) {
   const { morador } = ctx;
   switch (nome) {
     case 'abrir_chamado': {
-      const ch = await sv.abrirChamado({ morador, ...args, categoria: args.categoria || 'manutencao', foto: ctx.foto || null });
+      const ch = await sv.abrirChamado({ morador, ...args, categoria: args.categoria || 'manutencao', foto: ctx.foto || null, video: ctx.video || null });
       ctx.acoes.push(`chamado ${ch.id}`);
-      if (ctx.foto) ctx.limparFoto?.();
-      return { ok: true, numero: ch.id, foto_anexada: Boolean(ctx.foto) };
+      if (ctx.foto || ctx.video) ctx.limparMidias?.();
+      return { ok: true, numero: ch.id, foto_anexada: Boolean(ctx.foto), video_anexado: Boolean(ctx.video) };
     }
     case 'consultar_meus_chamados': {
       const l = ok(await db.from('chamados').select('id, titulo, status, criado_em, observacao_equipe').eq('morador_id', morador.id).order('criado_em', { ascending: false }).limit(6));
@@ -200,7 +201,7 @@ function registrarUso(uso) {
   console.log(`[agente] tokens: entrada ${uso.prompt_tokens} (cache ${cache}, ${pct}%), saída ${uso.completion_tokens}`);
 }
 
-async function responder(morador, texto, { foto = null, limparFoto } = {}) {
+async function responder(morador, texto, { foto = null, video = null, limparMidias } = {}) {
   const cfg = await getConfig();
   const anteriores = ok(await db.from('mensagens').select('direcao, texto').eq('telefone', morador.telefone).order('criado_em', { ascending: false }).limit(HISTORICO + 1)).reverse();
   // A última mensagem de entrada é a atual (já gravada); o restante é o histórico
@@ -210,7 +211,11 @@ async function responder(morador, texto, { foto = null, limparFoto } = {}) {
   if (!anteriores.some((m) => m.direcao === 'entrada')) {
     variavel += `\n\nPRIMEIRA CONVERSA: apresente-se como ${cfg.nome_assistente} e diga em até 3 linhas curtas o que você faz (abre chamados de manutenção, registra reclamações sem expor quem reclamou, tira dúvidas sobre as regras do prédio e avisa sobre eventos e obras). Depois responda ao que a pessoa pediu.`;
   }
-  if (foto) variavel += '\n\nO morador acabou de mandar uma foto. Se você abrir um chamado agora, ela é anexada automaticamente; diga isso a ele.';
+  if (foto || video) {
+    const oQue = [foto && 'foto', video && 'vídeo'].filter(Boolean).join(' e ');
+    variavel += `\n\nO morador mandou ${oQue} há pouco. Se você abrir um chamado agora, ${foto && video ? 'eles são anexados' : 'é anexado'} automaticamente; diga isso a ele.`;
+  }
+  variavel += '\n\nFORMATOS: áudios chegam transcritos; fotos chegam com a descrição do que aparece; vídeos você não assiste, mas ficam guardados; "[respondendo em cima de ...]" indica que a pessoa respondeu citando uma mensagem anterior: use isso para entender a que ela se refere.';
 
   const mensagens = [
     { role: 'system', content: await montarParteFixa(cfg) },
@@ -219,7 +224,7 @@ async function responder(morador, texto, { foto = null, limparFoto } = {}) {
     { role: 'user', content: texto },
   ];
 
-  const ctx = { morador, acoes: [], foto, limparFoto };
+  const ctx = { morador, acoes: [], foto, video, limparMidias };
   const tools = FERRAMENTAS.map((f) => ({ type: 'function', function: f }));
 
   for (let volta = 0; volta < 6; volta++) {
@@ -265,10 +270,10 @@ async function atualizarResumo(morador) {
 const ESPERA_MS = 8000;        // espera a pessoa terminar de digitar (mensagens picadas)
 const ESPERA_MAX_MS = 20000;   // nunca espera mais que isso desde a primeira mensagem
 const LIMITE_POR_HORA = 30;    // proteção contra uso abusivo (custo de IA)
-const FOTO_VALIDA_MS = 20 * 60000;
+const MIDIA_VALIDA_MS = 30 * 60000;
 
 const buffers = new Map();     // telefone -> { partes, timer, inicio, nome, temMidia }
-const fotosPendentes = new Map(); // telefone -> { caminho, em }
+const midiasPendentes = new Map(); // telefone -> { foto, video, em }
 const contagemHora = new Map();   // telefone -> [timestamps]
 
 function dentroDoLimite(tel) {
@@ -291,18 +296,35 @@ async function transcreverAudio(ids) {
   return (r.text || '').trim();
 }
 
-// Foto: baixa e guarda; fica disponível para o próximo chamado aberto por essa pessoa
-async function guardarFotoDoMorador(tel, ids) {
-  const { buffer, mime } = await uazapi.baixarMidia(ids);
-  const caminho = await salvarFoto(buffer, /png/.test(mime) ? 'image/png' : 'image/jpeg', 'moradores');
-  fotosPendentes.set(tel, { caminho, em: Date.now() });
-  return caminho;
+function guardarPendente(tel, tipo, id) {
+  const atual = midiasPendentes.get(tel);
+  const m = atual && Date.now() - atual.em < MIDIA_VALIDA_MS ? atual : {};
+  midiasPendentes.set(tel, { ...m, [tipo]: id, em: Date.now() });
 }
 
-function fotoPendente(tel) {
-  const f = fotosPendentes.get(tel);
-  if (!f || Date.now() - f.em > FOTO_VALIDA_MS) return null;
-  return f.caminho;
+// Foto: baixa, guarda e a IA descreve o que vê. Fica pronta para ser anexada ao próximo chamado.
+async function guardarFotoDoMorador(tel, ids, legenda, { citada = false } = {}) {
+  const { buffer, mime } = await uazapi.baixarMidia(ids, { citada });
+  const tipo = /png/.test(mime) ? 'image/png' : /webp/.test(mime) ? 'image/webp' : 'image/jpeg';
+  const id = await salvarFoto(buffer, tipo, 'moradores');
+  guardarPendente(tel, 'foto', id);
+  let descricao = '';
+  try { descricao = await descreverImagem(buffer, tipo, legenda); } catch (e) { console.error('[agente] visão', e.message); }
+  return { id, descricao };
+}
+
+// Vídeo: o assistente não assiste, mas guarda para anexar ao chamado
+async function guardarVideoDoMorador(tel, ids, { citada = false } = {}) {
+  const { buffer, mime } = await uazapi.baixarMidia(ids, { citada, limiteBytes: LIMITE_VIDEO });
+  const id = await salvarVideo(buffer, String(mime).startsWith('video/') ? mime : 'video/mp4');
+  guardarPendente(tel, 'video', id);
+  return id;
+}
+
+function midiaPendente(tel) {
+  const m = midiasPendentes.get(tel);
+  if (!m || Date.now() - m.em > MIDIA_VALIDA_MS) return {};
+  return { foto: m.foto || null, video: m.video || null };
 }
 
 // Nota de 1 a 5 depois de um chamado resolvido (sem gastar IA)
@@ -359,14 +381,14 @@ async function processar(tel) {
       return;
     }
 
-    ok(await db.from('mensagens').insert({ morador_id: morador.id, telefone: morador.telefone, direcao: 'entrada', texto }));
+    await inserirMensagem({ morador_id: morador.id, telefone: morador.telefone, direcao: 'entrada', texto, wa_id: b.waId || null });
     await db.from('moradores').update({ ultima_interacao: new Date().toISOString() }).eq('id', morador.id);
 
     if (await tratarAvaliacao(morador, texto)) return;
 
     let resposta;
     try {
-      resposta = await responder(morador, texto, { foto: fotoPendente(tel), limparFoto: () => fotosPendentes.delete(tel) });
+      resposta = await responder(morador, texto, { ...midiaPendente(tel), limparMidias: () => midiasPendentes.delete(tel) });
     } catch (e) {
       console.error('[agente] erro', e.message);
       resposta = 'Tive um problema técnico agora. Sua mensagem ficou registrada e a administração vai verificar.';
@@ -377,33 +399,82 @@ async function processar(tel) {
 }
 
 // Entrada principal: chamada pelo webhook para cada mensagem privada
-async function receberMensagemPrivada({ telefone, nome, texto, midia, ids }) {
-  const tel = normalizarTelefone(telefone);
+// Transforma cada formato (texto, áudio, foto, vídeo, documento...) em texto que o assistente entende
+async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo }) {
+  const legenda = texto ? ` Legenda: "${texto}".` : '';
+  switch (midia) {
+    case 'ignorar':
+      return ''; // reação, figurinha, chamada: não responde
+    case 'audio':
+      try {
+        const t = await transcreverAudio(ids);
+        return t ? `[áudio transcrito] ${t}` : '[o morador mandou um áudio sem fala reconhecível]';
+      } catch (e) {
+        console.error('[agente] áudio', e.message);
+        return '[o morador mandou um áudio que não consegui ouvir: peça para escrever ou mandar de novo]';
+      }
+    case 'imagem':
+      try {
+        const { descricao } = await guardarFotoDoMorador(tel, ids, texto);
+        return `[o morador enviou uma foto.${legenda} Leitura automática da foto (pode errar; na dúvida, confirme com o morador): ${descricao || 'não consegui descrever'}. Se for um problema, ela é anexada ao chamado]`;
+      } catch (e) {
+        console.error('[agente] foto', e.message);
+        return texto || '[o morador enviou uma foto que não consegui abrir: peça para mandar de novo]';
+      }
+    case 'video':
+      try {
+        await guardarVideoDoMorador(tel, ids);
+        return `[o morador enviou um vídeo.${legenda} Você não consegue assistir vídeos: pergunte em poucas palavras o que ele mostra. O vídeo fica guardado e é anexado ao chamado, se abrir um]`;
+      } catch (e) {
+        console.error('[agente] vídeo', e.message);
+        return `[o morador enviou um vídeo${e.grande ? ' grande demais para guardar' : ' que não consegui guardar'}.${legenda} Peça para descrever o que ele mostra${e.grande ? ' ou mandar um vídeo mais curto' : ''}]`;
+      }
+    case 'documento':
+      return `[o morador enviou um documento${nomeArquivo ? ` (${nomeArquivo})` : ''} que você não consegue abrir.${legenda} Pergunte do que se trata ou encaminhe à administração]`;
+    case 'localizacao':
+      return '[o morador enviou uma localização]';
+    case 'contato':
+      return `[o morador enviou um contato]${legenda}`;
+    default:
+      if (texto) return texto;
+      if (tipoMensagem) console.log('[agente] tipo de mensagem sem tratamento:', tipoMensagem);
+      return '';
+  }
+}
+
+// Quando a pessoa responde "em cima" de uma mensagem, descobre o que foi citado
+async function lerCitacao(tel, { citadoId, citadoTexto }) {
+  if (!citadoId && !citadoTexto) return '';
+  let texto = citadoTexto;
+  let quem = '';
+  if (!texto && citadoId) {
+    const r = await db.from('mensagens').select('direcao, texto').eq('wa_id', citadoId).limit(1);
+    if (!r.error && r.data[0]) { texto = r.data[0].texto; quem = r.data[0].direcao === 'saida' ? 'sua mensagem' : 'mensagem dele'; }
+  }
+  if (!texto) {
+    // Pode ser uma foto ou vídeo antigo: tenta baixar a mídia citada
+    try {
+      const { descricao } = await guardarFotoDoMorador(tel, [citadoId], '', { citada: true });
+      return `[respondendo em cima de uma foto. O que aparece: ${descricao}] `;
+    } catch {
+      return '[respondendo em cima de uma mensagem anterior que não está no histórico] ';
+    }
+  }
+  return `[respondendo em cima de ${quem || 'uma mensagem'}: "${String(texto).replace(/\s+/g, ' ').slice(0, 300)}"] `;
+}
+
+async function receberMensagemPrivada(ev) {
+  const tel = normalizarTelefone(ev.telefone);
   if (!tel) return;
 
-  let parte = texto || '';
-  if (midia === 'audio') {
-    try {
-      const t = await transcreverAudio(ids);
-      parte = t ? `[áudio transcrito] ${t}` : '[o morador mandou um áudio sem fala reconhecível]';
-    } catch (e) {
-      console.error('[agente] áudio', e.message);
-      parte = '[o morador mandou um áudio que não consegui ouvir: peça para escrever ou mandar de novo]';
-    }
-  } else if (midia === 'imagem') {
-    try {
-      await guardarFotoDoMorador(tel, ids);
-      parte = `[o morador enviou uma foto${texto ? ` com a legenda: ${texto}` : ''}. Se for um problema, a foto será anexada ao chamado]`;
-    } catch (e) {
-      console.error('[agente] foto', e.message);
-      parte = texto || '[o morador enviou uma foto que não consegui abrir]';
-    }
-  } else if (!parte) {
-    return; // figurinha, reação, localização etc.: não responde
-  }
+  const conteudo = await lerConteudo(tel, ev);
+  if (!conteudo) return;
+  let parte = conteudo;
+  try { parte = (await lerCitacao(tel, ev)) + conteudo; } catch (e) { console.error('[agente] citação', e.message); }
 
   const agora = Date.now();
-  const b = buffers.get(tel) || { partes: [], inicio: agora, nome };
+  const b = buffers.get(tel) || { partes: [], inicio: agora, nome: ev.nome };
+  b.waId = ev.waId || b.waId;
   b.partes.push(parte);
   clearTimeout(b.timer);
   const espera = Math.max(0, Math.min(ESPERA_MS, ESPERA_MAX_MS - (agora - b.inicio)));

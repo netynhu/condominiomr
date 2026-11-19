@@ -11,6 +11,7 @@
   <p class="d-local"><%- icone('local') %><%= c.local || 'Local não informado' %></p>
   <% if (c.descricao) { %><p class="d-desc"><%= c.descricao %></p><% } %>
   <% if (c.foto) { %><img class="d-foto" src="/foto/<%= c.id %>/problema" alt="Foto do problema" loading="lazy"><% } %>
+  <% if (c.video) { %><video class="d-foto" src="/foto/<%= c.id %>/video" controls playsinline preload="metadata"></video><% } %>
   <p class="d-quem">
     Nº <%= c.id %> · <%= u.dataHora(c.criado_em) %><br>
     <%= c.morador ? `Pedido de ${c.morador.nome}${c.morador.unidade ? ' · apto ' + (c.morador.unidade.bloco ? c.morador.unidade.bloco + '-' : '') + c.morador.unidade.numero : ''}` : `Aberto por ${c.aberto_por || 'administração'}` %>

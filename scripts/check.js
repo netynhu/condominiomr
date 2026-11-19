@@ -25,6 +25,11 @@ const casos = [
   [{ EventType: 'messages', message: { chatid: '1203630@g.us', sender: '123@lid', sender_pn: '5511988887777@s.whatsapp.net', isGroup: true, text: 'portão quebrado' } }, (r) => r.ehGrupo && r.telefone === '5511988887777'],
   [{ EventType: 'messages', message: { fromMe: true, text: 'x' } }, (r) => r.tipo === 'ignorar'],
   [{ EventType: 'connection', instance: { status: 'connected' } }, (r) => r.tipo === 'conexao' && r.estado === 'connected'],
+  [{ EventType: 'messages', message: { chatid: '5511999998888@s.whatsapp.net', messageType: 'AudioMessage', text: '' } }, (r) => r.midia === 'audio'],
+  [{ EventType: 'messages', message: { chatid: '5511999998888@s.whatsapp.net', messageType: 'VideoMessage', text: 'olha' } }, (r) => r.midia === 'video'],
+  [{ EventType: 'messages', message: { chatid: '5511999998888@s.whatsapp.net', messageType: 'ImageMessage', text: '' } }, (r) => r.midia === 'imagem'],
+  [{ EventType: 'messages', message: { chatid: '5511999998888@s.whatsapp.net', messageType: 'ReactionMessage' } }, (r) => r.midia === 'ignorar'],
+  [{ EventType: 'messages', message: { chatid: '5511999998888@s.whatsapp.net', text: 'isso', quoted: 'ABC123', messageid: 'XYZ' } }, (r) => r.citadoId === 'ABC123' && r.waId === 'XYZ'],
 ];
 casos.forEach(([body, teste], i) => { if (!teste(lerWebhook(body))) { falhas++; console.error('Webhook caso', i + 1, 'falhou', lerWebhook(body)); } });
 const v = variantesTelefone('5511999998888');

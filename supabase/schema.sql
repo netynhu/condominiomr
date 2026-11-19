@@ -246,3 +246,12 @@ create table if not exists fotos (
   criado_em timestamptz not null default now()
 );
 alter table fotos enable row level security;
+
+-- ===== Versão 0.4: vídeos e citações =====
+
+-- Vídeo enviado pelo morador e anexado ao chamado (id na tabela fotos, que guarda qualquer mídia)
+alter table chamados add column if not exists video text;
+
+-- Id da mensagem no WhatsApp: permite saber a qual mensagem o morador respondeu
+alter table mensagens add column if not exists wa_id text;
+create index if not exists mensagens_wa_id_idx on mensagens (wa_id);

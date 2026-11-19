@@ -22,4 +22,23 @@ async function completar(sistema, usuario, { temperatura = 0.3, maxTokens = 1200
   return (r.choices[0]?.message?.content || '').trim();
 }
 
-module.exports = { openai, completar };
+// Descreve uma foto para o assistente "enxergar" o que o morador mandou
+async function descreverImagem(buffer, mime = 'image/jpeg', contexto = '') {
+  // Imagens minúsculas (miniaturas, ícones) fazem a IA inventar conteúdo: nem tenta
+  if (!buffer || buffer.length < 4000) return 'Foto ilegível';
+  const r = await openai().chat.completions.create({
+    model: env.OPENAI_MODEL,
+    temperature: 0.2,
+    max_tokens: 160,
+    messages: [
+      { role: 'system', content: 'Você descreve fotos enviadas por moradores de condomínio ao assistente do prédio. Em português, em até 2 frases objetivas: o que aparece e, se houver, qual problema (algo quebrado, vazamento, sujeira, carro mal parado, risco). Leia placas, números de vaga ou de apartamento se estiverem visíveis. Não identifique pessoas pelo rosto. Descreva só o que dá para ver com clareza: se a imagem estiver em branco, escura, muito pequena, borrada ou ilegível, responda apenas "Foto ilegível" e nunca invente o conteúdo.' },
+      { role: 'user', content: [
+        { type: 'text', text: contexto ? `Legenda ou contexto do morador: ${contexto}` : 'Descreva a foto.' },
+        { type: 'image_url', image_url: { url: `data:${mime};base64,${buffer.toString('base64')}`, detail: 'auto' } },
+      ] },
+    ],
+  });
+  return (r.choices[0]?.message?.content || '').trim();
+}
+
+module.exports = { openai, completar, descreverImagem };
