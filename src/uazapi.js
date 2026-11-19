@@ -206,7 +206,9 @@ function lerWebhook(body) {
     if (foiEnviadaPeloSistema(m.messageid || m.id, texto)) return { tipo: 'ignorar' };
     const alvoChat = telefoneDoJid(chatid) || soDigitos(body.chat?.phone || '');
     if (ehGrupo) { telefone = dono || telefone; proprio = true; }
-    else if (dono && alvoChat === dono) { telefone = dono; proprio = true; }
+    // Conversa consigo mesmo: o chat é o próprio número. Se a Uazapi não informar o dono,
+    // o servidor confirma comparando com o WhatsApp da simulação.
+    else if (alvoChat && (!dono || alvoChat === dono)) { telefone = alvoChat; proprio = true; }
     else return { tipo: 'ignorar', proprioOutraConversa: true, diag: { chatid, chatPhone: body.chat?.phone || '', dono, tipo: m.messageType || '' } };
   }
   return {
