@@ -67,7 +67,7 @@ Crie uma chave em platform.openai.com. O modelo é definido em `OPENAI_MODEL` (p
 
 ## Versão 0.3: zelador, grupo e assistente da administração
 
-> Banco já criado? Rode `supabase/migracoes/003_zelador_fotos_grupo.sql` no SQL Editor. Ele cria as colunas novas e a pasta privada `fotos` no Storage.
+> Banco já criado? Rode `supabase/migracoes/003_zelador_fotos_grupo.sql` no SQL Editor. Ele cria as colunas novas e a tabela onde ficam as fotos.
 
 - **App do zelador** (`/z`): três abas (A fazer, Fazendo, Feito), **Começar**, **Terminei** com foto e **Avisar problema** em três toques. Pode ser instalado na tela inicial do celular.
 - **Acesso por link:** em Equipe e acessos, crie o zelador só com nome e WhatsApp e clique em **Enviar link de acesso**. Ele entra sem senha e fica conectado por 90 dias.
