@@ -255,3 +255,9 @@ alter table chamados add column if not exists video text;
 -- Id da mensagem no WhatsApp: permite saber a qual mensagem o morador respondeu
 alter table mensagens add column if not exists wa_id text;
 create index if not exists mensagens_wa_id_idx on mensagens (wa_id);
+
+-- ===== Versão 0.5: pré-cadastro =====
+alter table contatos_pendentes add column if not exists dados jsonb not null default '{}'::jsonb;
+
+-- Atualiza o cache da API do Supabase para enxergar tudo o que foi criado acima
+notify pgrst, 'reload schema';

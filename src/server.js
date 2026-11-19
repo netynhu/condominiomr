@@ -33,6 +33,11 @@ async function tratarWebhook(body) {
     console.log('[whatsapp] conexão:', ev.estado, ev.motivo);
     return;
   }
+  if (ev.proprioOutraConversa) {
+    // Ajuda a diagnosticar a simulação: mostra no log por que uma mensagem do próprio número foi ignorada
+    if ((await simulacao.config()).ativa) console.log('[simulação] mensagem do próprio número ignorada (não é a conversa consigo mesmo):', JSON.stringify(ev.diag));
+    return;
+  }
   if (ev.tipo !== 'mensagem') return;
 
   const sim = await simulacao.config();

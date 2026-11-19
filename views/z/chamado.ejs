@@ -56,7 +56,7 @@
       const r = await fetch('/z/<%= c.id %>/terminar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ foto, observacao: document.getElementById('obs').value }) });
       if (!r.ok) throw new Error();
       location.href = '/z?aba=feito&ok=1';
-    } catch { b.disabled = false; b.textContent = 'Tentar de novo'; alert('Não deu certo. Confira a internet e tente de novo.'); }
+    } catch { b.disabled = false; b.textContent = 'Tentar de novo'; dialogo.aviso('Não deu certo', { texto: 'Confira a internet e tente de novo.' }); }
   };
 })();
 </script>

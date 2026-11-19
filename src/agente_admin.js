@@ -89,6 +89,16 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: {} },
   },
   {
+    name: 'listar_pedidos_cadastro',
+    description: 'Lista os pedidos de cadastro feitos pelo WhatsApp por pessoas que ainda não são moradores.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'decidir_pedido_cadastro',
+    description: 'Aprova ou recusa um pedido de cadastro feito pelo WhatsApp. Aprovar cria o morador e avisa a pessoa.',
+    parameters: { type: 'object', properties: { telefone: { type: 'string' }, decisao: { type: 'string', enum: ['aprovar', 'recusar'] } }, required: ['telefone', 'decisao'] },
+  },
+  {
     name: 'cadastrar_morador',
     description: 'Cadastra (ou atualiza) um morador para o assistente reconhecer o WhatsApp dele.',
     parameters: {
@@ -124,6 +134,7 @@ async function executar(nome, args, ctx) {
       const previa = canal === 'grupo'
         ? `📢 *${av.titulo}*\n\n${av.texto}\n\n_${cfg.nome_predio} · Administração_`
         : `Olá, (nome)!\n\n${av.titulo}\n\n${av.texto}`;
+      ctx.avisoPreparado = av.id;
       return { aviso_id: av.id, canal, destino: canal === 'grupo' ? `grupo ${cfg.grupo_nome || '(nenhum grupo configurado!)'}` : (publico === 'todos' ? 'privado de todos os moradores' : `privado do bloco ${publico.slice(6)}`), previa };
     }
     case 'enviar_aviso_confirmado': {
@@ -171,6 +182,15 @@ async function executar(nome, args, ctx) {
       const l = ok(await db.from('reclamacoes').select('id, tipo, unidade_alvo, descricao, status, criado_em').in('status', ['nova', 'em_tratamento']).order('criado_em', { ascending: false }).limit(20));
       return l.map((r) => ({ numero: r.id, tipo: r.tipo, unidade: r.unidade_alvo, status: r.status, quando: dataHora(r.criado_em), descricao: r.descricao.slice(0, 200) }));
     }
+    case 'listar_pedidos_cadastro': {
+      const l = ok(await db.from('contatos_pendentes').select('*').order('atualizado_em', { ascending: false }).limit(20));
+      return l.map((p) => ({ telefone: p.telefone, nome: p.dados?.nome || p.nome_whatsapp, bloco: p.dados?.bloco, apartamento: p.dados?.apartamento, vinculo: p.dados?.vinculo, situacao: p.dados?.etapa === 'aguardando' ? 'completo, aguardando aprovação' : 'incompleto' }));
+    }
+    case 'decidir_pedido_cadastro': {
+      if (args.decisao === 'recusar') { await sv.recusarCadastro(args.telefone); return { ok: true, recusado: args.telefone }; }
+      const m = await sv.aprovarCadastro(args.telefone);
+      return { ok: true, aprovado: m.nome, unidade: m.unidade ? `${m.unidade.bloco ? m.unidade.bloco + '-' : ''}${m.unidade.numero}` : '', avisado_no_whatsapp: true };
+    }
     case 'cadastrar_morador': {
       const telefone = normalizarTelefone(args.telefone);
       if (telefone.length < 12) return { ok: false, erro: 'Telefone inválido: precisa do DDD.' };
@@ -202,11 +222,12 @@ COMO TRABALHAR
 - Pedido de "aviso de manutenção/obra/reunião numa data": crie o evento na agenda (criar_evento) E prepare o aviso para o grupo, mostrando a prévia.
 - Ao atualizar chamado, confirme o número e o novo status.
 - Reclamações: nunca tente descobrir quem reclamou.
-- Ao final de cada ação, diga em uma linha o que foi feito.`;
+- Ao final de cada ação, diga em uma linha o que foi feito.
+- Se uma ferramenta devolver erro, conte ao síndico em linguagem simples qual foi o problema (ex.: grupo não configurado) e o que fazer. Não diga só que houve um problema técnico.`;
 }
 
 // Conversa com a administração. "canal" identifica o histórico: telefone do WhatsApp ou "painel-<id>"
-async function responderAdmin(admin, canal, texto) {
+async function responderAdmin(admin, canal, texto, ctx = { admin }) {
   const anteriores = ok(await db.from('mensagens').select('direcao, texto').eq('telefone', canal).order('criado_em', { ascending: false }).limit(HISTORICO + 1)).reverse();
   if (anteriores.length && anteriores[anteriores.length - 1].direcao === 'entrada') anteriores.pop();
   const mensagens = [
@@ -215,7 +236,6 @@ async function responderAdmin(admin, canal, texto) {
     { role: 'user', content: texto },
   ];
   const tools = FERRAMENTAS.map((f) => ({ type: 'function', function: f }));
-  const ctx = { admin };
   for (let volta = 0; volta < 8; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.2 });
     const msg = r.choices[0].message;
@@ -237,11 +257,16 @@ async function responderAdmin(admin, canal, texto) {
 async function atenderAdminWhatsApp(admin, tel, texto) {
   ok(await db.from('mensagens').insert({ telefone: tel, direcao: 'entrada', texto }));
   let resposta;
-  try { resposta = await responderAdmin(admin, tel, texto); } catch (e) {
+  const ctx = { admin };
+  try { resposta = await responderAdmin(admin, tel, texto, ctx); } catch (e) {
     console.error('[admin] erro', e.message);
     resposta = 'Tive um problema técnico para executar. Tente de novo ou use o painel.';
   }
-  if (resposta) await sv.enviar(tel, resposta, null, 'você, como síndico');
+  if (!resposta) return;
+  // Aviso preparado: botões para confirmar ou ajustar (plano B: responder sim)
+  if (ctx.avisoPreparado) {
+    await sv.enviarBotoes(tel, resposta, ['✅ Pode enviar|confirmar_aviso', '✏️ Quero ajustar|ajustar_aviso'], { planoB: 'Responda "sim" para enviar ou diga o que ajustar.', rotulo: 'você, como síndico' });
+  } else await sv.enviar(tel, resposta, null, 'você, como síndico');
 }
 
 // Mensagem da administração pela tela "Assistente" do painel

@@ -77,7 +77,7 @@
     clearInterval(timer);
     let voltas = 0;
     timer = setInterval(async () => {
-      if (++voltas > 60) { clearInterval(timer); $('qr').hidden = true; alert('O QR code expirou. Gere outro.'); return; }
+      if (++voltas > 60) { clearInterval(timer); $('qr').hidden = true; dialogo.aviso('O QR code expirou', { texto: 'Clique em Gerar QR code para criar outro.' }); return; }
       try { const r = await fetch('/whatsapp/status.json'); if (r.ok) mostrar(await r.json()); } catch (e) {}
     }, 3000);
   }

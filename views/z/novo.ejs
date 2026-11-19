@@ -40,14 +40,14 @@
   document.getElementById('form-novo').addEventListener('submit', async (e) => {
     e.preventDefault();
     const local = (document.querySelector('input[name=local]:checked') || {}).value;
-    if (!local) { alert('Toque em onde é o problema.'); return; }
+    if (!local) { dialogo.aviso('Onde é o problema?', { texto: 'Toque em um dos quadrados do passo 1.' }); return; }
     const b = document.getElementById('btn-enviar'); b.disabled = true; b.textContent = 'Enviando...';
     try {
       const r = await fetch('/z/novo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ local, foto, texto: document.getElementById('texto').value }) });
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error();
       location.href = '/z/' + j.id;
-    } catch { b.disabled = false; b.textContent = 'Tentar de novo'; alert('Não deu certo. Confira a internet e tente de novo.'); }
+    } catch { b.disabled = false; b.textContent = 'Tentar de novo'; dialogo.aviso('Não deu certo', { texto: 'Confira a internet e tente de novo.' }); }
   });
 })();
 </script>

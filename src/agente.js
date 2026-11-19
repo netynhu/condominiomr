@@ -346,16 +346,79 @@ async function tratarAvaliacao(morador, texto) {
   return true;
 }
 
+// Bloco e apartamento a partir do que a pessoa escreveu: "B 304", "bloco b apto 304", "304", "B-304"
+function lerUnidade(texto) {
+  const t = String(texto || '').trim();
+  const numeros = t.match(/\d{1,5}/g);
+  if (!numeros) return null;
+  const apartamento = numeros[numeros.length - 1];
+  const b = /bloco\s*([a-z0-9]{1,3})\b/i.exec(t) || /^\s*([a-z])\s*[-/ ]?\s*\d/i.exec(t) || /\d\s*[-/ ]?\s*([a-z])\s*$/i.exec(t) || /torre\s*([a-z0-9]{1,3})\b/i.exec(t);
+  return { bloco: b ? b[1].toUpperCase() : '', apartamento };
+}
+
+// Quem escreve e não é morador cadastrado: oferece o pré-cadastro, que a administração aprova.
+// Ninguém vira morador sem a aprovação da administração.
 async function atenderNaoCadastrado(tel, nome, texto) {
-  const existente = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
-  const responderAgora = !existente || Date.now() - new Date(existente.atualizado_em).getTime() > 12 * 3600000;
-  await db.from('contatos_pendentes').upsert({
-    telefone: tel, nome_whatsapp: nome || existente?.nome_whatsapp || null, ultima_mensagem: String(texto || '[mídia]').slice(0, 500),
-    vezes: (existente?.vezes || 0) + 1, atualizado_em: new Date().toISOString(),
-  });
-  if (responderAgora) {
-    const cfg = await getConfig();
-    await sv.enviar(tel, `Olá! Sou o assistente virtual do ${cfg.nome_predio}. Ainda não encontrei este número no cadastro de moradores. Já avisei a administração, que vai confirmar seus dados. Assim que for liberado, eu te atendo por aqui.`);
+  const cfg = await getConfig();
+  const ex = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
+  const d = ex?.dados || {};
+  const t = String(texto || '').trim();
+  const tl = t.toLowerCase();
+  const horasDesde = ex ? (Date.now() - new Date(ex.atualizado_em).getTime()) / 3600000 : 999;
+  const salvar = async (novos) => {
+    const r = await db.from('contatos_pendentes').upsert({
+      telefone: tel, nome_whatsapp: nome || ex?.nome_whatsapp || null, ultima_mensagem: t.slice(0, 500) || '[mídia]',
+      vezes: (ex?.vezes || 0) + 1, atualizado_em: new Date().toISOString(), dados: { ...d, ...novos },
+    });
+    if (r.error) throw new Error(r.error.message);
+  };
+  const enviar = (msg) => sv.enviar(tel, msg);
+  const perguntarVinculo = () => sv.enviarBotoes(tel, 'Qual é o seu vínculo com o apartamento?', ['Proprietário|cad_prop', 'Inquilino|cad_inq', 'Outro (familiar, funcionário)|cad_outro'], { planoB: 'Responda: proprietário, inquilino ou outro.' });
+
+  switch (d.etapa) {
+    case 'nome':
+      if (t.length < 3 || /^cad_/.test(tl)) return enviar('Qual é o seu nome completo?');
+      await salvar({ etapa: 'unidade', nome: t.slice(0, 80) });
+      return enviar(`Obrigado, ${primeiroNome(t)}! Qual é o seu bloco e apartamento? Exemplo: B 304`);
+    case 'unidade': {
+      const u = lerUnidade(t);
+      if (!u) return enviar('Não entendi o apartamento. Escreva o bloco e o número, por exemplo: B 304 (ou só 304 se não houver bloco).');
+      await salvar({ etapa: 'vinculo', ...u });
+      return perguntarVinculo();
+    }
+    case 'vinculo': {
+      const vinculo = tl === 'cad_prop' || /propriet|dono/.test(tl) ? 'proprietario' : tl === 'cad_inq' || /inquilin|alug/.test(tl) ? 'inquilino' : tl === 'cad_outro' || /outro|famil|filh|funcion/.test(tl) ? 'outro' : null;
+      if (!vinculo) return perguntarVinculo();
+      await salvar({ etapa: 'aguardando', vinculo });
+      const rotuloV = { proprietario: 'proprietário', inquilino: 'inquilino', outro: 'outro vínculo' }[vinculo];
+      const unid = `${d.bloco ? `bloco ${d.bloco}, ` : ''}apto ${d.apartamento}`;
+      await enviar(`Pronto, ${primeiroNome(d.nome)}! Recebi seu pedido de cadastro (${unid}, ${rotuloV}). A administração vai confirmar e eu te aviso por aqui assim que for liberado.`);
+      // Avisa o síndico com botão para aprovar ali mesmo
+      if (cfg.telefone_sindico) {
+        await sv.enviarBotoes(cfg.telefone_sindico, `📝 Pedido de cadastro\n${d.nome}\n${unid} · ${rotuloV}\nWhatsApp: ${tel}\n\nConfira se a pessoa mora mesmo no prédio antes de aprovar.`,
+          [`✅ Aprovar|aprovar_cadastro:${tel}`, `Recusar|recusar_cadastro:${tel}`], { planoB: `Aprove em Moradores, no painel, ou responda "aprovar cadastro ${tel}".`, rotulo: 'síndico' });
+      }
+      return;
+    }
+    case 'aguardando':
+      if (horasDesde > 12) { await salvar({}); return enviar('Seu pedido de cadastro ainda está com a administração. Assim que for aprovado, eu te aviso por aqui.'); }
+      return;
+    case 'nao_morador':
+      if (horasDesde > 12) { await salvar({}); return enviar(`Este canal é exclusivo para os moradores do ${cfg.nome_predio}. Para outros assuntos, fale com a administração (${cfg.horario_administracao}).`); }
+      return;
+    default:
+      if (tl === 'cad_sim' || /cadastr|sou morador|moro aqui|moro no/.test(tl)) {
+        await salvar({ etapa: 'nome' });
+        return enviar('Ótimo! Vou fazer seu pré-cadastro em 3 perguntas rápidas. Qual é o seu nome completo?');
+      }
+      if (tl === 'cad_nao') {
+        await salvar({ etapa: 'nao_morador' });
+        return enviar(`Entendi. Este canal é exclusivo para os moradores do ${cfg.nome_predio}. Para outros assuntos, fale com a administração (${cfg.horario_administracao}).`);
+      }
+      if (d.etapa === 'inicio' && horasDesde < 0.05) return; // acabou de receber os botões
+      await salvar({ etapa: 'inicio' });
+      return sv.enviarBotoes(tel, `Olá! Sou o assistente virtual do ${cfg.nome_predio}. Não encontrei este número no cadastro de moradores. Você mora no prédio?`,
+        ['Sou morador, quero me cadastrar|cad_sim', 'Não sou morador|cad_nao'], { planoB: 'Responda "quero me cadastrar" se você mora no prédio.' });
   }
 }
 
@@ -375,6 +438,7 @@ async function processar(tel) {
       const r = await simulacao.rotear(texto);
       if (r.resposta) { await require('./uazapi').enviarTexto(tel, r.resposta); return; }
       if (r.admin) return require('./agente_admin').atenderAdminWhatsApp(r.admin, tel, texto);
+      if (r.desconhecido) return atenderNaoCadastrado(r.desconhecido, 'Visitante (simulação)', texto);
       morador = r.morador;
     } else {
       // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
@@ -409,7 +473,22 @@ async function processar(tel) {
 
 // Entrada principal: chamada pelo webhook para cada mensagem privada
 // Transforma cada formato (texto, áudio, foto, vídeo, documento...) em texto que o assistente entende
-async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo }) {
+// O que cada botão clicado significa para o assistente
+const BOTOES = {
+  abrir_chamado_grupo: 'Sim, quero abrir um chamado sobre o que eu falei no grupo.',
+  nao_precisa: 'Não precisa, obrigado.',
+  confirmar_aviso: 'Sim, pode enviar o aviso.',
+  ajustar_aviso: 'Quero ajustar o aviso antes de enviar.',
+};
+
+async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, botao }) {
+  if (botao) {
+    if (BOTOES[botao]) return BOTOES[botao];
+    const cad = /^(aprovar|recusar)_cadastro:(\d+)$/.exec(botao);
+    if (cad) return `${cad[1] === 'aprovar' ? 'Aprovo' : 'Recuso'} o pedido de cadastro do WhatsApp ${cad[2]}.`;
+    if (/^[1-5]$/.test(botao) || botao.startsWith('cad_')) return botao; // nota e cadastro tratam o id direto
+    return `[clicou no botão: ${texto || botao}]`;
+  }
   const legenda = texto ? ` Legenda: "${texto}".` : '';
   switch (midia) {
     case 'ignorar':
@@ -510,7 +589,8 @@ async function avaliarMensagemDoGrupo(morador, texto) {
   if (!r?.problema || !r.resumo) return;
 
   await db.from('moradores').update({ abordado_grupo_em: new Date().toISOString() }).eq('id', morador.id);
-  await sv.enviar(morador.telefone, `Oi, ${primeiroNome(morador.nome)}! Vi sua mensagem no grupo sobre ${r.resumo}. Quer que eu abra um chamado para a equipe resolver? É só responder aqui. Se quiser, pode mandar uma foto ou um áudio.`, morador.id);
+  await sv.enviarBotoes(morador.telefone, `Oi, ${primeiroNome(morador.nome)}! Vi sua mensagem no grupo sobre ${r.resumo}. Quer que eu abra um chamado para a equipe resolver? Se quiser, pode mandar uma foto ou um áudio.`,
+    ['🔧 Abrir chamado|abrir_chamado_grupo', 'Não precisa|nao_precisa'], { planoB: 'É só responder aqui.', moradorId: morador.id });
 }
 
 module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo };

@@ -65,16 +65,17 @@ async function desconectar() {
   return chamar('/instance/disconnect', { method: 'POST' });
 }
 
+// Cadastra o webhook do condomínio SEM mexer nos webhooks de outros sistemas que usam a mesma instância.
+// Se já existir um webhook com o mesmo endereço base, atualiza só ele; senão, acrescenta um novo.
 async function configurarWebhook(url) {
-  return chamar('/webhook', {
-    method: 'POST',
-    body: {
-      enabled: true,
-      url,
-      events: ['messages', 'connection'],
-      excludeMessages: ['wasSentByApi'],
-    },
-  });
+  const corpo = { enabled: true, url, events: ['messages', 'connection'], excludeMessages: ['wasSentByApi'] };
+  let existentes = [];
+  try { const j = await chamar('/webhook'); existentes = Array.isArray(j) ? j : (j && j.url ? [j] : []); } catch { existentes = []; }
+  const base = url.split('/webhook/uazapi/')[0] + '/webhook/uazapi/';
+  const meu = existentes.find((w) => String(w.url || '').startsWith(base));
+  if (meu?.id) return chamar('/webhook', { method: 'POST', body: { ...corpo, id: meu.id, action: 'update' } });
+  if (existentes.length) return chamar('/webhook', { method: 'POST', body: { ...corpo, action: 'add' } });
+  return chamar('/webhook', { method: 'POST', body: corpo });
 }
 
 async function listarGrupos() {
@@ -105,6 +106,20 @@ async function enviarTexto(numero, texto, { digitando = true } = {}) {
   const delay = digitando ? Math.min(4000, 800 + final.length * 15) : 0;
   const json = await chamar('/send/text', { method: 'POST', body: { number: real, text: final, delay } });
   lembrarEnvio(json, final);
+  return json;
+}
+
+// Botões interativos (POST /send/menu). escolhas: "Texto|id" (resposta) ou "Texto|https://..." (link).
+// tipo "list" mostra uma lista; a Uazapi avisa que botões podem ser descontinuados, então quem chama tem plano B em texto.
+async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '', botaoLista = 'Ver opções' } = {}) {
+  const alvo = String(numero || '');
+  if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: botões só no privado.');
+  const { numero: real, etiqueta } = await require('./simulacao').destino(soDigitos(alvo));
+  const corpo = { number: real, type: tipo, text: etiqueta + texto, choices: escolhas };
+  if (rodape) corpo.footerText = rodape;
+  if (tipo === 'list') corpo.listButton = botaoLista;
+  const json = await chamar('/send/menu', { method: 'POST', body: corpo });
+  lembrarEnvio(json, etiqueta + texto);
   return json;
 }
 
@@ -177,7 +192,9 @@ function lerWebhook(body) {
   if (tipo !== 'messages') return { tipo: 'outro', bruto: tipo };
   const m = body.message || {};
   if (m.wasSentByApi) return { tipo: 'ignorar' };
-  const texto = typeof m.text === 'string' ? m.text.trim() : '';
+  // Clique em botão ou item de lista: o id vem em buttonOrListid
+  const botao = String(m.buttonOrListid || '').trim();
+  const texto = (typeof m.text === 'string' ? m.text.trim() : '') || botao;
   const chatid = m.chatid || body.chat?.wa_chatid || '';
   const ehGrupo = Boolean(m.isGroup) || chatid.endsWith('@g.us');
   let telefone = telefoneDoJid(m.sender_pn) || telefoneDoJid(m.sender) || (!ehGrupo ? telefoneDoJid(chatid) : '') || telefoneDoJid(body.chat?.wa_chatid);
@@ -190,10 +207,11 @@ function lerWebhook(body) {
     const alvoChat = telefoneDoJid(chatid) || soDigitos(body.chat?.phone || '');
     if (ehGrupo) { telefone = dono || telefone; proprio = true; }
     else if (dono && alvoChat === dono) { telefone = dono; proprio = true; }
-    else return { tipo: 'ignorar' };
+    else return { tipo: 'ignorar', proprioOutraConversa: true, diag: { chatid, chatPhone: body.chat?.phone || '', dono, tipo: m.messageType || '' } };
   }
   return {
     tipo: 'mensagem',
+    botao,
     proprio,
     ehGrupo,
     chatid,
@@ -210,4 +228,4 @@ function lerWebhook(body) {
   };
 }
 
-module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };
+module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };

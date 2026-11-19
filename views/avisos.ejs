@@ -64,7 +64,12 @@ document.querySelectorAll('input[name=canal]').forEach((r) => r.addEventListener
 }));
 document.getElementById('form-aviso').addEventListener('submit', (e) => {
   const grupo = document.querySelector('input[name=canal]:checked').value === 'grupo';
-  if (e.submitter && e.submitter.dataset.c && !confirm(grupo ? 'Postar este aviso agora no grupo dos moradores?' : 'Enviar este aviso agora no privado dos moradores escolhidos?')) e.preventDefault();
+  const form = e.target;
+  if (!e.submitter || !e.submitter.dataset.c || form.dataset.confirmado === '1') return;
+  e.preventDefault();
+  const sub = e.submitter;
+  dialogo.confirmar(grupo ? 'Postar este aviso agora no grupo dos moradores?' : 'Enviar este aviso agora no privado dos moradores escolhidos?', { ok: grupo ? 'Postar no grupo' : 'Enviar' })
+    .then((ok) => { if (ok) { form.dataset.confirmado = '1'; form.requestSubmit(sub); } });
 });
 document.getElementById('btn-ia').addEventListener('click', (e) => ocupado(e.target, async () => {
   const tipo = document.getElementById('tipo').value;

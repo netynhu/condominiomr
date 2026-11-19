@@ -7,6 +7,7 @@ const { db, ok, getConfig, setConfig } = require('./db');
 const { variantesTelefone, rotuloUnidade, primeiroNome } = require('./util');
 
 const FICTICIO = /^5500000000\d{3}$/;
+const NOVO = '5500000000999'; // pessoa que ainda não é morador (#novo)
 const ehFicticio = (tel) => FICTICIO.test(String(tel || ''));
 
 async function config() {
@@ -18,7 +19,7 @@ const ehTelefoneDaSimulacao = (tel, sim) => sim.ativa && variantesTelefone(tel).
 
 async function moradoresFicticios() {
   const l = ok(await db.from('moradores').select('*, unidade:unidades(*)').like('telefone', '5500000000%').order('telefone'));
-  return l.filter((m) => ehFicticio(m.telefone));
+  return l.filter((m) => ehFicticio(m.telefone) && m.telefone !== NOVO);
 }
 
 async function adminDaSimulacao() {
@@ -27,7 +28,7 @@ async function adminDaSimulacao() {
 }
 
 function menu(moradores) {
-  return `🧪 *Modo simulação*\nVocê troca de identidade mandando um comando:\n${moradores.map((m, i) => `#${i + 1}  ${m.nome} (${rotuloUnidade(m.unidade)})`).join('\n')}\n#sindico  Administração (comandos de aviso, agenda, chamados)\n#quem  mostra quem você é agora\n\nTudo que o sistema enviaria para moradores, zelador ou síndico chega aqui, com a etiqueta de quem receberia.`;
+  return `🧪 *Modo simulação*\nVocê troca de identidade mandando um comando:\n${moradores.map((m, i) => `#${i + 1}  ${m.nome} (${rotuloUnidade(m.unidade)})`).join('\n')}\n#novo  Pessoa que ainda não é morador (testa o pedido de cadastro)\n#sindico  Administração (comandos de aviso, agenda, chamados)\n#quem  mostra quem você é agora\n\nTudo que o sistema enviaria para moradores, zelador ou síndico chega aqui, com a etiqueta de quem receberia.`;
 }
 
 // Trata comandos "#..." e diz para quem a mensagem vai. Retorna { resposta } para comandos,
@@ -49,6 +50,12 @@ async function rotear(texto) {
       await setConfig({ simulacao_persona: `morador:${n[1]}` });
       return { resposta: `🧪 Agora você é *${m.nome}* (${rotuloUnidade(m.unidade)}${m.vaga ? `, vaga ${m.vaga}` : ''}). Pode conversar com o assistente.` };
     }
+    if (cmd === '#novo') {
+      await db.from('contatos_pendentes').delete().eq('telefone', NOVO);
+      await db.from('moradores').delete().eq('telefone', NOVO);
+      await setConfig({ simulacao_persona: 'novo' });
+      return { resposta: '🧪 Agora você é *uma pessoa que ainda não é morador*. Mande qualquer mensagem para ver o pedido de cadastro. O pedido de aprovação chega aqui como síndico.' };
+    }
     if (cmd === '#quem') {
       if (sim.persona === 'sindico') return { resposta: '🧪 Você está como *administração*.' };
       const m = moradores[Number(sim.persona.split(':')[1] || 1) - 1];
@@ -58,6 +65,10 @@ async function rotear(texto) {
   }
 
   if (sim.persona === 'sindico') return { admin: await adminDaSimulacao() };
+  if (sim.persona === 'novo') {
+    const [novo] = ok(await db.from('moradores').select('*, unidade:unidades(*)').eq('telefone', NOVO).limit(1));
+    return novo && novo.ativo ? { morador: novo } : { desconhecido: NOVO };
+  }
   const m = moradores[Number(sim.persona.split(':')[1] || 1) - 1];
   return m ? { morador: m } : { resposta: menu(moradores) };
 }

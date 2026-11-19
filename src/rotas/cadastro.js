@@ -61,6 +61,20 @@ router.post('/moradores/importar', admin, a(async (req, res) => {
   res.redirect('/moradores');
 }));
 
+router.post('/pendentes/:tel/aprovar', admin, a(async (req, res) => {
+  try {
+    const m = await require('../servicos').aprovarCadastro(req.params.tel);
+    avisar(req, `${m.nome} aprovado. A pessoa recebeu a confirmação no WhatsApp.`);
+  } catch (e) { avisar(req, e.message, 'erro'); }
+  res.redirect('/moradores');
+}));
+
+router.post('/pendentes/:tel/recusar', admin, a(async (req, res) => {
+  await require('../servicos').recusarCadastro(req.params.tel);
+  avisar(req, 'Pedido recusado. A pessoa foi avisada.');
+  res.redirect('/moradores');
+}));
+
 router.post('/pendentes/:tel/ignorar', admin, a(async (req, res) => {
   await db.from('contatos_pendentes').delete().eq('telefone', req.params.tel);
   res.redirect('/moradores');

@@ -1,8 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
 const { env } = require('./config');
 
+// Com tempo limite: se o banco cair, a página mostra um erro em vez de ficar carregando para sempre
+const fetchComLimite = (url, opts = {}) => fetch(url, { ...opts, signal: opts.signal || AbortSignal.timeout(8000) })
+  .catch((e) => { throw new Error(e.name === 'TimeoutError' || e.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ? 'O banco de dados (Supabase) não está respondendo.' : e.message); });
+
 const db = createClient(env.SUPABASE_URL || 'http://localhost', env.SUPABASE_SERVICE_ROLE_KEY || 'x', {
   auth: { persistSession: false, autoRefreshToken: false },
+  global: { fetch: fetchComLimite },
 });
 
 // Lança erro quando o Supabase devolve erro, para não esconder falhas.

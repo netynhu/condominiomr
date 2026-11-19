@@ -6,10 +6,18 @@ async function postJSON(url, dados) {
   return j;
 }
 
-// Botões que pedem confirmação antes de enviar o formulário
-document.addEventListener('submit', (e) => {
-  const msg = e.target.getAttribute('data-confirmar');
-  if (msg && !window.confirm(msg)) e.preventDefault();
+// Formulários com data-confirmar pedem confirmação na janela do próprio sistema.
+// Palavras como excluir/desconectar/apagar deixam o botão vermelho.
+document.addEventListener('submit', async (e) => {
+  const form = e.target;
+  const msg = form.getAttribute('data-confirmar');
+  if (!msg || form.dataset.confirmado === '1') return;
+  e.preventDefault();
+  const perigo = /exclu|apag|descon|cancel|parar|bloque/i.test(msg);
+  const ok = await dialogo.confirmar(msg, { perigo, ok: perigo ? 'Sim, continuar' : 'Confirmar' });
+  if (!ok) return;
+  form.dataset.confirmado = '1';
+  form.requestSubmit(e.submitter || undefined);
 });
 
 // Menu lateral no celular
@@ -24,5 +32,5 @@ async function ocupado(botao, fn) {
   const t = botao.innerHTML;
   botao.disabled = true;
   botao.textContent = 'Aguarde...';
-  try { await fn(); } catch (err) { alert(err.message); } finally { botao.disabled = false; botao.innerHTML = t; }
+  try { await fn(); } catch (err) { dialogo.aviso('Não deu certo', { texto: err.message }); } finally { botao.disabled = false; botao.innerHTML = t; }
 }

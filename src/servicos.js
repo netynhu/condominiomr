@@ -33,6 +33,26 @@ async function enviar(telefone, texto, moradorId, rotulo) {
   }
 }
 
+// Mensagem com botões. Se os botões falharem (a Uazapi avisa que podem ser descontinuados),
+// manda o mesmo conteúdo em texto, com as opções escritas (planoB).
+async function enviarBotoes(telefone, texto, escolhas, { tipo = 'button', rodape = '', botaoLista, planoB = '', moradorId, rotulo } = {}) {
+  const tel = normalizarTelefone(telefone);
+  if (!tel) return false;
+  let final = texto;
+  if (rotulo) {
+    const simulacao = require('./simulacao');
+    if (simulacao.ehTelefoneDaSimulacao(tel, await simulacao.config())) final = `*[→ ${rotulo}]*\n${texto}`;
+  }
+  try {
+    const r = await uazapi.enviarMenu(tel, final, escolhas, { tipo, rodape, botaoLista });
+    await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto: `${texto}\n[botões: ${escolhas.map((e) => e.split('|')[0]).join(' / ')}]`, wa_id: uazapi.idEnviado(r) });
+    return true;
+  } catch (e) {
+    console.error('[botões] falhou, enviando em texto:', e.message);
+    return enviar(tel, planoB ? `${texto}\n\n${planoB}` : texto, moradorId, rotulo);
+  }
+}
+
 // Avisa síndico, zelador ou portaria pelo WhatsApp, se o telefone estiver configurado
 async function avisarEquipe(papel, texto) {
   const cfg = await getConfig();
@@ -77,9 +97,14 @@ async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'n
   }
   // O zelador recebe o aviso com o link direto para o chamado no app (exceto quando foi ele mesmo que abriu)
   if (origem !== 'zelador') {
-    const link = env.APP_URL ? `\n\n👉 Toque para abrir: ${env.APP_URL}/z/${ch.id}` : '';
+    const url = env.APP_URL ? `${env.APP_URL}/z/${ch.id}` : '';
     const anexos = [foto && '📷 Tem foto', video && '🎥 Tem vídeo'].filter(Boolean).join(' · ');
-    for (const tel of await telefonesZeladores()) await enviar(tel, `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}${link}`, null, 'zelador');
+    const msg = `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}`;
+    for (const tel of await telefonesZeladores()) {
+      // Botão que abre o chamado direto no app do zelador (plano B: o link em texto)
+      if (url) await enviarBotoes(tel, msg, [`📋 Abrir chamado|${url}`], { rodape: 'App do zelador', planoB: `👉 Toque para abrir: ${url}`, rotulo: 'zelador' });
+      else await enviar(tel, msg, null, 'zelador');
+    }
   }
   if (prioridade === 'urgente' || (prioridade === 'alta' && foraDoHorario())) {
     await avisarEquipe('sindico', `${EMOJI_PRIORIDADE[prioridade]} ${corpo}`);
@@ -112,7 +137,8 @@ async function mudarStatusChamado(id, status, observacao, usuarioNome, fotoConcl
       }
       if (!foiComFoto) await enviar(tel, texto, ch.morador.id);
       // Pede a nota do atendimento (a resposta é tratada pelo agente)
-      await enviar(tel, 'De 1 a 5, que nota você dá para esse atendimento? Responda só com o número. Se ainda houver algum problema, é só me contar.', ch.morador.id);
+      await enviarBotoes(tel, 'Que nota você dá para esse atendimento? Se ainda houver algum problema, é só me contar.', ['[Sua nota]', '5 · Excelente|5', '4 · Bom|4', '3 · Regular|3', '2 · Ruim|2', '1 · Péssimo|1'],
+        { tipo: 'list', botaoLista: 'Dar nota', planoB: 'Responda com um número de 1 a 5.', moradorId: ch.morador.id });
       await db.from('chamados').update({ avaliacao_pedida_em: agora }).eq('id', id);
     } else if (status === 'em_andamento') {
       await enviar(tel, `Olá, ${nome}! 🔧 A equipe já está cuidando do seu chamado nº ${id} (${ch.titulo}).${observacao ? `\n${observacao}` : ''}`, ch.morador.id);
@@ -170,6 +196,32 @@ async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, des
   return { ...r, reincidencia };
 }
 
+// Aprova um pedido de cadastro feito pelo WhatsApp: cria o morador e avisa a pessoa
+async function aprovarCadastro(telefone, ajustes = {}) {
+  const tel = normalizarTelefone(telefone);
+  const p = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
+  if (!p) throw new Error('Pedido de cadastro não encontrado.');
+  const d = { ...(p.dados || {}), ...ajustes };
+  const nome = d.nome || p.nome_whatsapp;
+  if (!nome || !d.apartamento) throw new Error('O pedido ainda não tem nome e apartamento.');
+  const bloco = String(d.bloco || '').trim().toUpperCase();
+  const numero = String(d.apartamento).trim();
+  let [u] = ok(await db.from('unidades').select('id').eq('bloco', bloco).eq('numero', numero).limit(1));
+  if (!u) u = ok(await db.from('unidades').insert({ bloco, numero }).select('id').single());
+  const tipo = ['proprietario', 'inquilino'].includes(d.vinculo) ? d.vinculo : 'morador';
+  const m = ok(await db.from('moradores').upsert({ nome, telefone: tel, tipo, unidade_id: u.id, ativo: true }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single());
+  await db.from('contatos_pendentes').delete().eq('telefone', tel);
+  const cfg = await getConfig();
+  await enviar(tel, `✅ Cadastro aprovado, ${primeiroNome(nome)}! Agora você fala direto com o assistente do ${cfg.nome_predio}.\n\nPor aqui você pode abrir chamados de manutenção, fazer reclamações sem se expor, tirar dúvidas sobre as regras e saber dos eventos e obras. Pode mandar texto, áudio ou foto.`, m.id);
+  return m;
+}
+
+async function recusarCadastro(telefone, avisar = true) {
+  const tel = normalizarTelefone(telefone);
+  await db.from('contatos_pendentes').delete().eq('telefone', tel);
+  if (avisar) await enviar(tel, 'Não conseguimos confirmar seu cadastro como morador. Se houver algum engano, procure a administração do prédio.');
+}
+
 // Lista de destinatários de um aviso: "todos" ou "bloco:B"
 async function destinatarios(publico) {
   let q = db.from('moradores').select('id, nome, telefone, unidade:unidades(bloco)').eq('ativo', true).eq('aceita_avisos', true);
@@ -196,6 +248,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, enviar, avisarEquipe, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, enviar, enviarBotoes, avisarEquipe, aprovarCadastro, recusarCadastro, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };
