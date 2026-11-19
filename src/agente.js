@@ -358,7 +358,8 @@ async function atenderNaoCadastrado(tel, nome, texto) {
     vezes: (ex?.vezes || 0) + 1, atualizado_em: new Date().toISOString(),
   });
   if (r.error) console.error('[não cadastrado]', r.error.message);
-  if (!responder) return;
+  // Com o interruptor desligado (ex.: número do prédio é um WhatsApp pessoal), só registra no painel, sem responder
+  if (!responder || cfg.responder_nao_cadastrados !== '1') return;
   await sv.enviar(tel, `Olá! Sou o assistente virtual do ${cfg.nome_predio}. Este canal atende apenas moradores cadastrados, e não encontrei este número no cadastro.
 
 Para se cadastrar, fale com a administração do prédio (${cfg.horario_administracao}). Depois do cadastro, é só me chamar por aqui.`);
@@ -373,24 +374,13 @@ async function processar(tel) {
   if (!texto) return;
 
   return emSequencia(tel, async () => {
-    // Simulação: o mesmo número faz o papel de vários moradores e do síndico (#1..#5, #sindico)
-    const simulacao = require('./simulacao');
-    let morador;
-    if (simulacao.ehTelefoneDaSimulacao(tel, await simulacao.config())) {
-      const r = await simulacao.rotear(texto);
-      if (r.resposta) { await require('./uazapi').enviarTexto(tel, r.resposta); return; }
-      if (r.admin) return require('./agente_admin').atenderAdminWhatsApp(r.admin, tel, texto);
-      if (r.desconhecido) return atenderNaoCadastrado(r.desconhecido, 'Visitante (simulação)', texto);
-      morador = r.morador;
-    } else {
-      // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
-      const admin = await require('./agente_admin').acharAdmin(tel);
-      if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
-      morador = await sv.acharMorador(tel);
-    }
+    // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
+    const admin = await require('./agente_admin').acharAdmin(tel);
+    if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
+    const morador = await sv.acharMorador(tel);
     if (!morador || !morador.ativo) return atenderNaoCadastrado(tel, b.nome, texto);
 
-    const limite = require('./simulacao').ehFicticio(morador.telefone) ? { ok: true } : dentroDoLimite(tel);
+    const limite = dentroDoLimite(tel);
     if (!limite.ok) {
       if (limite.primeiraVezAcima) await sv.enviar(tel, 'Recebi muitas mensagens em pouco tempo. Vou pausar as respostas automáticas por alguns minutos. Se for urgente, fale com a portaria.', morador.id);
       return;

@@ -25,12 +25,9 @@
   <label class="check"><input type="checkbox" name="grupo_chamar_privado" id="grupo_chamar_privado" <%= c.grupo_chamar_privado === '1' ? 'checked' : '' %>> Quando um morador relatar um problema no grupo, chamar ele no privado para abrir o chamado</label>
   <p class="small muted">O assistente nunca responde no grupo. Com esta opção ligada, ele manda no máximo uma mensagem privada por morador a cada 24 horas.</p>
 
-  <h2 style="margin-top:8px">Modo simulação</h2>
-  <label class="check"><input type="checkbox" name="simulacao_ativa" id="simulacao_ativa" <%= c.simulacao_ativa === '1' ? 'checked' : '' %>> Ligado: um só WhatsApp faz o papel dos moradores fictícios e do síndico</label>
-  <label>WhatsApp da simulação<input name="simulacao_telefone" id="simulacao_telefone" value="<%= c.simulacao_telefone ? u.formatarTelefone(c.simulacao_telefone) : '' %>" inputmode="tel"></label>
-  <label>Números de teste (outros celulares atendidos normalmente)<input name="simulacao_numeros_teste" id="simulacao_numeros_teste" value="<%= String(c.simulacao_numeros_teste || '').split(', ').filter(Boolean).map(t => u.formatarTelefone(t)).join(', ') %>" placeholder="(11) 98888-7777, (11) 97777-6666"></label>
-  <p class="small muted">Separe por vírgula. Esses números recebem o atendimento de verdade: se não forem moradores, recebem a orientação e aparecem em Moradores para cadastrar.</p>
-  <p class="small muted">Com a simulação ligada, o assistente só atende esse número e ignora todas as outras conversas privadas. Nesse celular, mande <b>#menu</b> para ver os comandos. Desligue antes de usar com moradores de verdade.</p>
+  <h2 style="margin-top:8px">Quem não é morador</h2>
+  <label class="check"><input type="checkbox" name="responder_nao_cadastrados" id="responder_nao_cadastrados" <%= c.responder_nao_cadastrados === '1' ? 'checked' : '' %>> Responder a quem não é morador, orientando a procurar a administração</label>
+  <p class="small muted">Com ou sem resposta, o número aparece em Moradores para cadastrar. <b>Deixe desligado se o número do prédio for um WhatsApp pessoal</b>: assim seus contatos não recebem a mensagem do assistente.</p>
 
   <h2 style="margin-top:8px">Instruções extras para o assistente</h2>
   <label>Regras da casa que o assistente deve seguir<textarea name="instrucoes_extras" id="instrucoes_extras" placeholder="Ex.: Encomendas ficam na portaria até 7 dias. Para reservar o salão, encaminhe à administração."><%= c.instrucoes_extras %></textarea></label>

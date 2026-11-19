@@ -13,18 +13,12 @@ async function acharMorador(telefone) {
 }
 
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
-// rotulo: para quem é a mensagem (zelador, síndico...). Na simulação, tudo chega no mesmo celular,
-// então a mensagem ganha uma etiqueta para saber quem a receberia.
+// rotulo: para quem é a mensagem (zelador, síndico...); hoje só informativo.
 async function enviar(telefone, texto, moradorId, rotulo) {
   const tel = normalizarTelefone(telefone);
   if (!tel) return false;
   try {
-    let final = texto;
-    if (rotulo) {
-      const simulacao = require('./simulacao');
-      if (simulacao.ehTelefoneDaSimulacao(tel, await simulacao.config())) final = `*[→ ${rotulo}]*\n${texto}`;
-    }
-    const r = await uazapi.enviarTexto(tel, final);
+    const r = await uazapi.enviarTexto(tel, texto);
     await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto, wa_id: uazapi.idEnviado(r) });
     return true;
   } catch (e) {
@@ -38,13 +32,8 @@ async function enviar(telefone, texto, moradorId, rotulo) {
 async function enviarBotoes(telefone, texto, escolhas, { tipo = 'button', rodape = '', botaoLista, planoB = '', moradorId, rotulo } = {}) {
   const tel = normalizarTelefone(telefone);
   if (!tel) return false;
-  let final = texto;
-  if (rotulo) {
-    const simulacao = require('./simulacao');
-    if (simulacao.ehTelefoneDaSimulacao(tel, await simulacao.config())) final = `*[→ ${rotulo}]*\n${texto}`;
-  }
   try {
-    const r = await uazapi.enviarMenu(tel, final, escolhas, { tipo, rodape, botaoLista });
+    const r = await uazapi.enviarMenu(tel, texto, escolhas, { tipo, rodape, botaoLista });
     await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto: `${texto}\n[botões: ${escolhas.map((e) => e.split('|')[0]).join(' / ')}]`, wa_id: uazapi.idEnviado(r) });
     return true;
   } catch (e) {

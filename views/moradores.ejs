@@ -7,7 +7,7 @@
 <% if (pendentes.length) { %>
 <div class="card" id="pendentes" style="border-color:var(--warn)">
   <h2>Números que escreveram e não têm cadastro</h2>
-  <p class="small muted">O assistente respondeu que o canal é só para moradores e pediu para procurar a administração. Se for morador, cadastre: o telefone já vem preenchido e a pessoa recebe as boas-vindas com o botão do grupo.</p>
+  <p class="small muted"><%= cfg.responder_nao_cadastrados === '1' ? 'O assistente respondeu que o canal é só para moradores e pediu para procurar a administração.' : 'O assistente não respondeu (resposta desligada em Ajustes do prédio).' %> Se for morador, cadastre: o telefone já vem preenchido e a pessoa recebe as boas-vindas com o botão do grupo.</p>
   <div class="lista">
     <% for (const p of pendentes) { %>
       <div class="item">

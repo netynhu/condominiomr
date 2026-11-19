@@ -8,7 +8,6 @@ const util = require('./util');
 const uazapi = require('./uazapi');
 const agente = require('./agente');
 const rotinas = require('./rotinas');
-const simulacao = require('./simulacao');
 const { db } = require('./db');
 
 const app = express();
@@ -33,45 +32,28 @@ async function tratarWebhook(body) {
     console.log('[whatsapp] conexão:', ev.estado, ev.motivo);
     return;
   }
-  if (ev.proprioOutraConversa) {
-    // Ajuda a diagnosticar a simulação: mostra no log por que uma mensagem do próprio número foi ignorada
-    if ((await simulacao.config()).ativa) console.log('[simulação] mensagem do próprio número ignorada (não é a conversa consigo mesmo):', JSON.stringify(ev.diag));
-    return;
-  }
   if (ev.tipo !== 'mensagem') return;
 
-  const sim = await simulacao.config();
+  // Mensagem escrita no próprio celular do número do prédio: só vale na conversa consigo mesmo
+  // (o chat é o próprio número). Mensagens dele para outras pessoas nunca são tratadas.
+  if (ev.proprio && !ev.ehGrupo) {
+    const numero = await uazapi.numeroDaInstancia();
+    const { variantesTelefone } = require('./util');
+    if (!numero || !variantesTelefone(ev.telefone).includes(numero)) return;
+  }
 
   if (ev.ehGrupo) {
     const cfg = await getConfig();
     if (!cfg.grupo_jid || ev.chatid !== cfg.grupo_jid || !ev.texto) return;
     const { acharMorador } = require('./servicos');
-    let morador = null;
-    if (ev.proprio) {
-      // Mensagem do dono do número no grupo: na simulação, conta como o morador que ele está representando
-      if (!sim.ativa) return;
-      morador = await simulacao.moradorAtual();
-    } else if (ev.telefone) morador = await acharMorador(ev.telefone);
-    await db.from('grupo_mensagens').insert({ telefone: morador?.telefone || ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
+    const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
+    await db.from('grupo_mensagens').insert({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
     // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
     if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, ev.texto);
     return;
   }
 
   if (!ev.telefone) return;
-  // Simulação ligada: só a conversa do dono consigo mesmo é atendida. Qualquer outra conversa
-  // privada (clientes, amigos) é ignorada, para o assistente não responder no WhatsApp pessoal.
-  // Simulação ligada: atende a conversa consigo mesmo e os números de teste; o resto é ignorado
-  if (sim.ativa && !ev.proprio && !simulacao.ehNumeroDeTeste(ev.telefone, sim)) {
-    console.log('[simulação] mensagem de número fora da simulação ignorada. Para testar com ele, coloque em Ajustes > Números de teste:', ev.telefone);
-    return;
-  }
-  // Mensagem do próprio número só vale na conversa consigo mesmo (o chat é o WhatsApp da simulação)
-  if (ev.proprio && !simulacao.ehTelefoneDaSimulacao(ev.telefone, sim)) {
-    if (sim.ativa) console.log('[simulação] mensagem própria em outra conversa ignorada:', ev.telefone);
-    return;
-  }
-  if (!sim.ativa && ev.proprio) return;
   await agente.receberMensagemPrivada(ev);
 }
 

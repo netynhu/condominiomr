@@ -84,7 +84,7 @@ async function listarGrupos() {
 }
 
 // Envia texto para uma pessoa. Nunca escreve em grupo: o assistente só lê o grupo.
-// Mensagens enviadas há pouco: evita que, na conversa consigo mesmo (simulação), o sistema leia a própria resposta
+// Mensagens enviadas há pouco: evita que, na conversa consigo mesmo, o sistema leia a própria resposta
 const enviadasRecentes = new Map(); // chave (id ou texto) -> hora
 function lembrarEnvio(json, texto) {
   const agora = Date.now();
@@ -100,12 +100,9 @@ async function enviarTexto(numero, texto, { digitando = true } = {}) {
   if (!alvo || alvo.includes('@g.us') || alvo.includes('@newsletter')) {
     throw new Error('Envio bloqueado: o assistente só envia mensagens privadas.');
   }
-  // Morador fictício (simulação): a mensagem vai para o telefone da simulação, com etiqueta
-  const { numero: real, etiqueta } = await require('./simulacao').destino(soDigitos(alvo));
-  const final = etiqueta + texto;
-  const delay = digitando ? Math.min(4000, 800 + final.length * 15) : 0;
-  const json = await chamar('/send/text', { method: 'POST', body: { number: real, text: final, delay } });
-  lembrarEnvio(json, final);
+  const delay = digitando ? Math.min(4000, 800 + texto.length * 15) : 0;
+  const json = await chamar('/send/text', { method: 'POST', body: { number: soDigitos(alvo), text: texto, delay } });
+  lembrarEnvio(json, texto);
   return json;
 }
 
@@ -114,12 +111,11 @@ async function enviarTexto(numero, texto, { digitando = true } = {}) {
 async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '', botaoLista = 'Ver opções' } = {}) {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: botões só no privado.');
-  const { numero: real, etiqueta } = await require('./simulacao').destino(soDigitos(alvo));
-  const corpo = { number: real, type: tipo, text: etiqueta + texto, choices: escolhas };
+  const corpo = { number: soDigitos(alvo), type: tipo, text: texto, choices: escolhas };
   if (rodape) corpo.footerText = rodape;
   if (tipo === 'list') corpo.listButton = botaoLista;
   const json = await chamar('/send/menu', { method: 'POST', body: corpo });
-  lembrarEnvio(json, etiqueta + texto);
+  lembrarEnvio(json, texto);
   return json;
 }
 
@@ -127,9 +123,8 @@ async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '
 async function enviarFoto(numero, buffer, legenda = '') {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: fotos só no privado.');
-  const { numero: real, etiqueta } = await require('./simulacao').destino(soDigitos(alvo));
-  const json = await chamar('/send/media', { method: 'POST', body: { number: real, type: 'image', file: buffer.toString('base64'), text: etiqueta + legenda } });
-  lembrarEnvio(json, etiqueta + legenda);
+  const json = await chamar('/send/media', { method: 'POST', body: { number: soDigitos(alvo), type: 'image', file: buffer.toString('base64'), text: legenda } });
+  lembrarEnvio(json, legenda);
   return json;
 }
 
@@ -183,6 +178,14 @@ function textoCitado(m) {
 // Id da mensagem que acabou de ser enviada (para reconhecer quando o morador responder em cima dela)
 const idEnviado = (json) => json?.messageid || json?.messageId || json?.id || json?.key?.id || null;
 
+// Número conectado na instância (guardado por 10 minutos)
+let cacheNumero = { valor: '', em: 0 };
+async function numeroDaInstancia() {
+  if (cacheNumero.valor && Date.now() - cacheNumero.em < 10 * 60000) return cacheNumero.valor;
+  try { const s = await status(); if (s.numero) cacheNumero = { valor: s.numero, em: Date.now() }; } catch { /* mantém o anterior */ }
+  return cacheNumero.valor;
+}
+
 // Converte o corpo do webhook em algo simples para o sistema
 function lerWebhook(body) {
   const tipo = body?.EventType || body?.event || body?.type;
@@ -201,13 +204,13 @@ function lerWebhook(body) {
   let proprio = false;
   if (m.fromMe) {
     // Mensagem que o próprio dono do número escreveu. Só interessa na conversa consigo mesmo
-    // (simulação) ou no grupo dos moradores. Mensagens dele para outras pessoas são ignoradas.
+    // ou no grupo dos moradores. Mensagens dele para outras pessoas são ignoradas.
     const dono = soDigitos(body.owner || '');
     if (foiEnviadaPeloSistema(m.messageid || m.id, texto)) return { tipo: 'ignorar' };
     const alvoChat = telefoneDoJid(chatid) || soDigitos(body.chat?.phone || '');
     if (ehGrupo) { telefone = dono || telefone; proprio = true; }
     // Conversa consigo mesmo: o chat é o próprio número. Se a Uazapi não informar o dono,
-    // o servidor confirma comparando com o WhatsApp da simulação.
+    // o servidor confirma comparando com o número conectado na instância.
     else if (alvoChat && (!dono || alvoChat === dono)) { telefone = alvoChat; proprio = true; }
     else return { tipo: 'ignorar', proprioOutraConversa: true, diag: { chatid, chatPhone: body.chat?.phone || '', dono, tipo: m.messageType || '' } };
   }
@@ -230,4 +233,4 @@ function lerWebhook(body) {
   };
 }
 
-module.exports = { status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };
+module.exports = { numeroDaInstancia, status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };
