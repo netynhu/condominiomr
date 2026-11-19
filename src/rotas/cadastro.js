@@ -21,15 +21,14 @@ async function unidadeId(bloco, numero) {
 // ---------- Moradores ----------
 router.get('/moradores', admin, a(async (req, res) => {
   const busca = String(req.query.q || '').trim().toLowerCase();
-  const [moradores, pendentes] = await Promise.all([
+  const [moradores] = await Promise.all([
     db.from('moradores').select('*, unidade:unidades(*)').order('nome').then(ok),
-    db.from('contatos_pendentes').select('*').order('atualizado_em', { ascending: false }).then(ok),
   ]);
   const lista = busca
     ? moradores.filter((m) => [m.nome, m.telefone, m.email, m.unidade?.numero, m.unidade?.bloco, m.vaga && `vaga ${m.vaga}`].join(' ').toLowerCase().includes(busca))
     : moradores;
   lista.sort((x, y) => `${x.unidade?.bloco || ''}${(x.unidade?.numero || '').padStart(6, '0')}`.localeCompare(`${y.unidade?.bloco || ''}${(y.unidade?.numero || '').padStart(6, '0')}`));
-  res.render('moradores', { titulo: 'Moradores', lista, pendentes, busca, total: moradores.length, novo: { telefone: req.query.telefone || '', nome: req.query.nome || '' } });
+  res.render('moradores', { titulo: 'Moradores', lista, busca, total: moradores.length, novo: { telefone: req.query.telefone || '', nome: req.query.nome || '' } });
 }));
 
 router.post('/moradores', admin, a(async (req, res) => {
@@ -196,7 +195,6 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
-  v.responder_nao_cadastrados = req.body.responder_nao_cadastrados === 'on' ? '1' : '0';
   await setConfig(v);
   avisar(req, 'Configurações salvas.');
   res.redirect('/configuracoes');

@@ -4,26 +4,6 @@
   <form method="get" action="/moradores" class="acoes"><input name="q" id="q" value="<%= busca %>" placeholder="Buscar nome, telefone, apto ou vaga" style="width:240px"><button class="btn sec" type="submit">Buscar</button></form>
 </div>
 
-<% if (pendentes.length) { %>
-<div class="card" id="pendentes" style="border-color:var(--warn)">
-  <h2>Números que escreveram e não têm cadastro</h2>
-  <p class="small muted"><%= cfg.responder_nao_cadastrados === '1' ? 'O assistente respondeu que o canal é só para moradores e pediu para procurar a administração.' : 'O assistente não respondeu (resposta desligada em Ajustes do prédio).' %> Se for morador, cadastre: o telefone já vem preenchido e a pessoa recebe as boas-vindas com o botão do grupo.</p>
-  <div class="lista">
-    <% for (const p of pendentes) { %>
-      <div class="item">
-        <div><b><%= p.nome_whatsapp || 'Sem nome no WhatsApp' %></b>
-          <div class="small"><%= u.formatarTelefone(p.telefone) %></div>
-          <div class="small muted">Última mensagem: "<%= p.ultima_mensagem %>" · <%= p.vezes %> mensagem(ns) · <%= u.dataHora(p.atualizado_em) %></div></div>
-        <div class="acoes">
-          <a class="btn peq" href="/moradores?telefone=<%= p.telefone %>&nome=<%= encodeURIComponent(p.nome_whatsapp || '') %>#novo">Cadastrar</a>
-          <form method="post" action="/pendentes/<%= p.telefone %>/ignorar"><button class="btn sec peq" type="submit">Ignorar</button></form>
-        </div>
-      </div>
-    <% } %>
-  </div>
-</div>
-<% } %>
-
 <div class="grade2">
   <div class="tabela">
     <table>

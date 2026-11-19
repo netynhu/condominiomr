@@ -349,21 +349,9 @@ async function tratarAvaliacao(morador, texto) {
 // Quem escreve e não é morador cadastrado: o cadastro é feito só pela administração, no painel.
 // A pessoa recebe uma orientação (no máximo uma vez a cada 24h) e o número aparece no painel para a administração.
 // Nenhuma informação do prédio é passada para quem não é morador.
-async function atenderNaoCadastrado(tel, nome, texto) {
-  const cfg = await getConfig();
-  const ex = ok(await db.from('contatos_pendentes').select('*').eq('telefone', tel).maybeSingle());
-  const responder = !ex || Date.now() - new Date(ex.atualizado_em).getTime() > 24 * 3600000;
-  const r = await db.from('contatos_pendentes').upsert({
-    telefone: tel, nome_whatsapp: nome || ex?.nome_whatsapp || null, ultima_mensagem: String(texto || '[mídia]').slice(0, 500),
-    vezes: (ex?.vezes || 0) + 1, atualizado_em: new Date().toISOString(),
-  });
-  if (r.error) console.error('[não cadastrado]', r.error.message);
-  // Com o interruptor desligado (ex.: número do prédio é um WhatsApp pessoal), só registra no painel, sem responder
-  if (!responder || cfg.responder_nao_cadastrados !== '1') return;
-  await sv.enviar(tel, `Olá! Sou o assistente virtual do ${cfg.nome_predio}. Este canal atende apenas moradores cadastrados, e não encontrei este número no cadastro.
-
-Para se cadastrar, fale com a administração do prédio (${cfg.horario_administracao}). Depois do cadastro, é só me chamar por aqui.`);
-}
+// Quem não é morador cadastrado (nem da administração) é ignorado: o assistente não responde,
+// não grava e não mostra no painel. O cadastro é feito só pela administração, no painel.
+async function atenderNaoCadastrado() {}
 
 // Processa tudo o que a pessoa mandou de uma vez
 async function processar(tel) {

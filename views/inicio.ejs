@@ -7,7 +7,6 @@
 <div class="numeros">
   <a class="numero <%= urgentes ? 'atencao' : '' %>" href="/chamados"><b><%= abertos %></b><span>chamados em aberto<%= urgentes ? `, ${urgentes} com prioridade alta` : '' %></span></a>
   <a class="numero <%= reclNovas ? 'atencao' : '' %>" href="/reclamacoes"><b><%= reclNovas %></b><span>reclamações novas</span></a>
-  <a class="numero <%= pendentes ? 'atencao' : '' %>" href="/moradores#pendentes"><b><%= pendentes %></b><span>números sem cadastro</span></a>
   <a class="numero" href="/moradores"><b><%= moradores %></b><span>moradores ativos</span></a>
   <a class="numero" href="/avisos"><b><%= fila %></b><span>mensagens na fila de envio</span></a>
   <a class="numero" href="/whatsapp"><b style="font-size:1.1rem;padding:9px 0"><%= whats ? (whats.conectado ? 'Conectado' : 'Desconectado') : 'Sem resposta' %></b><span>WhatsApp do prédio</span></a>

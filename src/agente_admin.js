@@ -89,11 +89,6 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: {} },
   },
   {
-    name: 'listar_numeros_sem_cadastro',
-    description: 'Lista os números que escreveram para o assistente e não são moradores cadastrados.',
-    parameters: { type: 'object', properties: {} },
-  },
-  {
     name: 'cadastrar_morador',
     description: 'Cadastra (ou atualiza) um morador para o assistente reconhecer o WhatsApp dele.',
     parameters: {
@@ -177,10 +172,6 @@ async function executar(nome, args, ctx) {
       const l = ok(await db.from('reclamacoes').select('id, tipo, unidade_alvo, descricao, status, criado_em').in('status', ['nova', 'em_tratamento']).order('criado_em', { ascending: false }).limit(20));
       return l.map((r) => ({ numero: r.id, tipo: r.tipo, unidade: r.unidade_alvo, status: r.status, quando: dataHora(r.criado_em), descricao: r.descricao.slice(0, 200) }));
     }
-    case 'listar_numeros_sem_cadastro': {
-      const l = ok(await db.from('contatos_pendentes').select('telefone, nome_whatsapp, ultima_mensagem, vezes, atualizado_em').order('atualizado_em', { ascending: false }).limit(20));
-      return l.map((p) => ({ telefone: p.telefone, nome_no_whatsapp: p.nome_whatsapp, ultima_mensagem: p.ultima_mensagem, mensagens: p.vezes, quando: dataHora(p.atualizado_em) }));
-    }
     case 'cadastrar_morador': {
       const telefone = normalizarTelefone(args.telefone);
       if (telefone.length < 12) return { ok: false, erro: 'Telefone inválido: precisa do DDD.' };
@@ -228,7 +219,7 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
     ...anteriores.map((m) => ({ role: m.direcao === 'entrada' ? 'user' : 'assistant', content: m.texto })),
     { role: 'user', content: texto },
   ];
-  const SO_NO_PAINEL = ['cadastrar_morador', 'listar_numeros_sem_cadastro'];
+  const SO_NO_PAINEL = ['cadastrar_morador'];
   const tools = FERRAMENTAS.filter((f) => ctx.canal === 'painel' || !SO_NO_PAINEL.includes(f.name)).map((f) => ({ type: 'function', function: f }));
   for (let volta = 0; volta < 8; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.2 });

@@ -25,10 +25,6 @@
   <label class="check"><input type="checkbox" name="grupo_chamar_privado" id="grupo_chamar_privado" <%= c.grupo_chamar_privado === '1' ? 'checked' : '' %>> Quando um morador relatar um problema no grupo, chamar ele no privado para abrir o chamado</label>
   <p class="small muted">O assistente nunca responde no grupo. Com esta opção ligada, ele manda no máximo uma mensagem privada por morador a cada 24 horas.</p>
 
-  <h2 style="margin-top:8px">Quem não é morador</h2>
-  <label class="check"><input type="checkbox" name="responder_nao_cadastrados" id="responder_nao_cadastrados" <%= c.responder_nao_cadastrados === '1' ? 'checked' : '' %>> Responder a quem não é morador, orientando a procurar a administração</label>
-  <p class="small muted">Com ou sem resposta, o número aparece em Moradores para cadastrar. <b>Deixe desligado se o número do prédio for um WhatsApp pessoal</b>: assim seus contatos não recebem a mensagem do assistente.</p>
-
   <h2 style="margin-top:8px">Instruções extras para o assistente</h2>
   <label>Regras da casa que o assistente deve seguir<textarea name="instrucoes_extras" id="instrucoes_extras" placeholder="Ex.: Encomendas ficam na portaria até 7 dias. Para reservar o salão, encaminhe à administração."><%= c.instrucoes_extras %></textarea></label>
   <div class="acoes"><button class="btn" type="submit">Salvar</button></div>

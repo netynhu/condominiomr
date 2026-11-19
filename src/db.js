@@ -41,7 +41,6 @@ const PADRAO = {
   horario_administracao: 'segunda a sexta, das 9h às 18h',
   instrucoes_extras: '',
   grupo_chamar_privado: '1',
-  responder_nao_cadastrados: '0',
 };
 
 async function getConfig() {

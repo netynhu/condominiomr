@@ -169,18 +169,22 @@ async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, des
     autor_morador_id: morador?.id || null, tipo, unidade_alvo: unidade_alvo || null, descricao, acontecendo_agora: !!acontecendo_agora,
   }).select().single());
 
-  const alvo = unidade_alvo ? `Unidade: ${unidade_alvo}\n` : '';
-  await avisarEquipe('portaria', `Reclamação nº ${r.id}${acontecendo_agora ? ' (acontecendo agora)' : ''}\nTipo: ${tipo}\n${alvo}${descricao}\nAutor protegido. Veja no painel.`);
-
   let reincidencia = 0;
   if (unidade_alvo) {
     const desde = new Date(Date.now() - 30 * 86400000).toISOString();
     const recentes = ok(await db.from('reclamacoes').select('unidade_alvo').gte('criado_em', desde).not('unidade_alvo', 'is', null));
     const k = chaveUnidade(unidade_alvo);
     reincidencia = recentes.filter((x) => chaveUnidade(x.unidade_alvo) === k).length;
-    if (reincidencia >= 3) {
-      await avisarEquipe('sindico', `Alerta de reincidência: a unidade ${unidade_alvo} recebeu ${reincidencia} reclamações nos últimos 30 dias (a mais recente: ${tipo}). Vale avaliar uma notificação formal. Detalhes no painel.`);
-    }
+  }
+
+  // Portaria e síndico recebem toda reclamação nova (sem o nome de quem reclamou)
+  const alvo = unidade_alvo ? `Unidade: ${unidade_alvo}\n` : '';
+  const msg = `📣 Reclamação nº ${r.id}${acontecendo_agora ? ' · ACONTECENDO AGORA' : ''}\nTipo: ${tipo}\n${alvo}${descricao}\nQuem reclamou fica protegido. Veja no painel.`;
+  const cfg = await getConfig();
+  await avisarEquipe('portaria', msg);
+  if (cfg.telefone_sindico && normalizarTelefone(cfg.telefone_sindico) !== normalizarTelefone(cfg.telefone_portaria)) {
+    const alerta = reincidencia >= 3 ? `\n\n⚠️ Reincidência: ${reincidencia} reclamações contra a unidade ${unidade_alvo} nos últimos 30 dias. Vale avaliar uma notificação formal.` : '';
+    await avisarEquipe('sindico', msg + alerta);
   }
   return { ...r, reincidencia };
 }
