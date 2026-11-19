@@ -67,7 +67,9 @@
         <label>Vínculo<select name="tipo" id="novo-tipo"><option value="morador">Morador</option><option value="proprietario">Proprietário</option><option value="inquilino">Inquilino</option><option value="outro">Outro</option></select></label>
         <label>E-mail<input type="email" name="email" id="novo-email"></label>
       </div>
+      <label class="check"><input type="checkbox" name="boas_vindas" id="novo-boas-vindas" checked> Enviar boas-vindas no WhatsApp<%= cfg.grupo_convite ? ' com o botão para entrar no grupo' : '' %></label>
       <button class="btn" type="submit">Cadastrar</button>
+      <% if (!cfg.grupo_convite) { %><p class="small muted">Para a mensagem ter o botão "Entrar no grupo", cole o link de convite do grupo em <a href="/configuracoes">Ajustes do prédio</a>.</p><% } %>
     </form>
 
     <details class="card">
@@ -75,6 +77,7 @@
       <form class="campos" method="post" action="/moradores/importar">
         <p class="small muted">Uma linha por morador, separando com ponto e vírgula: <code>nome; telefone; bloco; apartamento; e-mail; vaga</code>. Pode colar direto de uma planilha. E-mail e vaga são opcionais. Telefones já cadastrados são atualizados.</p>
         <textarea name="lista" id="lista" placeholder="Carla Mendes; 11999998888; B; 304; carla@email.com; 12"></textarea>
+        <label class="check"><input type="checkbox" name="boas_vindas" id="importar-boas-vindas"> Enviar boas-vindas para todos os importados (saem aos poucos, pela fila)</label>
         <button class="btn sec" type="submit">Importar</button>
       </form>
     </details>

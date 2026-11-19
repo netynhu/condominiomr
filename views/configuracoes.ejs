@@ -20,6 +20,8 @@
   <p class="small muted">Síndico: urgências, reincidência de reclamações, manutenção preventiva e assuntos encaminhados. Zelador: chamados novos. Portaria: reclamações novas, sem o nome de quem reclamou.</p>
 
   <h2 style="margin-top:8px">Grupo dos moradores</h2>
+  <label>Link de convite do grupo<input name="grupo_convite" id="grupo_convite" value="<%= c.grupo_convite || '' %>" placeholder="https://chat.whatsapp.com/..."></label>
+  <p class="small muted">No WhatsApp: abra o grupo &gt; Convidar via link &gt; Copiar link. Ele vai no botão "Entrar no grupo" da mensagem de boas-vindas a cada morador cadastrado.</p>
   <label class="check"><input type="checkbox" name="grupo_chamar_privado" id="grupo_chamar_privado" <%= c.grupo_chamar_privado === '1' ? 'checked' : '' %>> Quando um morador relatar um problema no grupo, chamar ele no privado para abrir o chamado</label>
   <p class="small muted">O assistente nunca responde no grupo. Com esta opção ligada, ele manda no máximo uma mensagem privada por morador a cada 24 horas.</p>
 

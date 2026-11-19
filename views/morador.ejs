@@ -74,6 +74,9 @@
       </div>
     </div>
 
+    <form method="post" action="/moradores/<%= m.id %>/boas-vindas" data-confirmar="Enviar a mensagem de boas-vindas<%= cfg.grupo_convite ? ' com o botão do grupo' : '' %> para <%= m.nome %>?">
+      <button class="btn sec" type="submit">Enviar boas-vindas de novo</button>
+    </form>
     <form method="post" action="/moradores/<%= m.id %>/excluir" data-confirmar="Excluir este morador? A memória e as mensagens dele também serão apagadas. Não dá para desfazer.">
       <button class="btn perigo" type="submit">Excluir morador e apagar dados</button>
     </form>

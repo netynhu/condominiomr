@@ -39,25 +39,33 @@ router.post('/moradores', admin, a(async (req, res) => {
   const r = await db.from('moradores').insert({
     nome: b.nome.trim(), telefone, email: b.email || null, tipo: b.tipo || 'morador', vaga: (b.vaga || '').trim() || null,
     unidade_id: await unidadeId(b.bloco, b.numero),
-  });
+  }).select('*, unidade:unidades(*)').single();
   if (r.error) { avisar(req, r.error.code === '23505' ? 'Este telefone já está cadastrado.' : r.error.message, 'erro'); return res.redirect('/moradores'); }
   await db.from('contatos_pendentes').delete().eq('telefone', telefone);
-  avisar(req, `${b.nome} cadastrado. O assistente já reconhece este número.`);
+  let enviado = false;
+  if (b.boas_vindas === 'on') enviado = await enviarBoasVindas(r.data);
+  avisar(req, `${b.nome} cadastrado. O assistente já reconhece este número.${enviado ? ' A mensagem de boas-vindas foi enviada no WhatsApp.' : ''}`);
   res.redirect('/moradores');
 }));
+
+async function enviarBoasVindas(m) {
+  try { return await require('../servicos').boasVindas(m); } catch (e) { console.error('[boas-vindas]', e.message); return false; }
+}
 
 // Importação: uma linha por morador -> nome; telefone; bloco; apartamento; e-mail; vaga
 router.post('/moradores/importar', admin, a(async (req, res) => {
   const linhas = String(req.body.lista || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  let criados = 0; const erros = [];
+  let criados = 0; const erros = []; const novos = [];
   for (const [i, linha] of linhas.entries()) {
     const [nome, tel, bloco, numero, email, vaga] = linha.split(/[;\t]/).map((x) => (x || '').trim());
     const telefone = normalizarTelefone(tel);
     if (!nome || telefone.length < 12) { erros.push(`linha ${i + 1}`); continue; }
-    const r = await db.from('moradores').upsert({ nome, telefone, email: email || null, vaga: vaga || null, unidade_id: await unidadeId(bloco, numero) }, { onConflict: 'telefone' });
-    if (r.error) erros.push(`linha ${i + 1}`); else criados++;
+    const r = await db.from('moradores').upsert({ nome, telefone, email: email || null, vaga: vaga || null, unidade_id: await unidadeId(bloco, numero) }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single();
+    if (r.error) erros.push(`linha ${i + 1}`); else { criados++; novos.push(r.data); }
   }
-  avisar(req, `${criados} moradores importados.${erros.length ? ` Não importadas: ${erros.join(', ')}.` : ''}`, erros.length ? 'erro' : 'ok');
+  // Boas-vindas de uma importação vão pela fila lenta, para não arriscar o número
+  const naFila = req.body.boas_vindas === 'on' && novos.length ? await require('../servicos').boasVindasEmFila(novos) : 0;
+  avisar(req, `${criados} moradores importados.${naFila ? ` Boas-vindas na fila para ${naFila} (saem aos poucos).` : ''}${erros.length ? ` Não importadas: ${erros.join(', ')}.` : ''}`, erros.length ? 'erro' : 'ok');
   res.redirect('/moradores');
 }));
 
@@ -99,6 +107,13 @@ router.post('/moradores/:id', admin, a(async (req, res) => {
     unidade_id: await unidadeId(b.bloco, b.numero),
   }).eq('id', req.params.id);
   avisar(req, r.error ? r.error.message : 'Dados salvos.', r.error ? 'erro' : 'ok');
+  res.redirect(`/moradores/${req.params.id}`);
+}));
+
+router.post('/moradores/:id/boas-vindas', admin, a(async (req, res) => {
+  const m = ok(await db.from('moradores').select('*, unidade:unidades(*)').eq('id', req.params.id).single());
+  const enviado = await enviarBoasVindas(m);
+  avisar(req, enviado ? 'Boas-vindas enviadas no WhatsApp.' : 'Não foi possível enviar agora. Confira a conexão do WhatsApp.', enviado ? 'ok' : 'erro');
   res.redirect(`/moradores/${req.params.id}`);
 }));
 
@@ -188,7 +203,7 @@ router.get('/configuracoes', admin, a(async (req, res) => {
 }));
 
 router.post('/configuracoes', admin, a(async (req, res) => {
-  const campos = ['nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras'];
+  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras'];
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';

@@ -211,9 +211,30 @@ async function aprovarCadastro(telefone, ajustes = {}) {
   const tipo = ['proprietario', 'inquilino'].includes(d.vinculo) ? d.vinculo : 'morador';
   const m = ok(await db.from('moradores').upsert({ nome, telefone: tel, tipo, unidade_id: u.id, ativo: true }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single());
   await db.from('contatos_pendentes').delete().eq('telefone', tel);
-  const cfg = await getConfig();
-  await enviar(tel, `✅ Cadastro aprovado, ${primeiroNome(nome)}! Agora você fala direto com o assistente do ${cfg.nome_predio}.\n\nPor aqui você pode abrir chamados de manutenção, fazer reclamações sem se expor, tirar dúvidas sobre as regras e saber dos eventos e obras. Pode mandar texto, áudio ou foto.`, m.id);
+  await boasVindas(m, '✅ Cadastro aprovado');
   return m;
+}
+
+const textoBoasVindas = (m, cfg, titulo) => `${titulo ? `${titulo}, ` : 'Olá, '}${primeiroNome(m.nome)}! Você foi cadastrado(a) no assistente do ${cfg.nome_predio}${m.unidade ? ` (${rotuloUnidade(m.unidade)})` : ''}.\n\nPor aqui você abre chamados de manutenção, faz reclamações sem se expor, tira dúvidas sobre as regras e fica sabendo dos eventos e obras. Pode mandar texto, áudio, foto ou vídeo.`;
+
+// Mensagem de boas-vindas ao morador recém-cadastrado, com o botão para entrar no grupo dos moradores
+async function boasVindas(morador, titulo = '') {
+  const cfg = await getConfig();
+  const m = morador.unidade || !morador.unidade_id ? morador : ok(await db.from('moradores').select('*, unidade:unidades(*)').eq('id', morador.id).single());
+  const texto = textoBoasVindas(m, cfg, titulo);
+  if (cfg.grupo_convite) {
+    return enviarBotoes(m.telefone, `${texto}\n\nToque abaixo para entrar no grupo dos moradores.`, [`👥 Entrar no grupo|${cfg.grupo_convite}`],
+      { rodape: cfg.grupo_nome || 'Grupo dos moradores', planoB: `Entre no grupo dos moradores: ${cfg.grupo_convite}`, moradorId: m.id });
+  }
+  return enviar(m.telefone, texto, m.id);
+}
+
+// Boas-vindas para muitos de uma vez (importação): vai pela fila lenta, em texto com o link do grupo
+async function boasVindasEmFila(moradores) {
+  const cfg = await getConfig();
+  const linhas = moradores.map((m) => ({ telefone: m.telefone, texto: `${textoBoasVindas(m, cfg)}${cfg.grupo_convite ? `\n\n👥 Grupo dos moradores: ${cfg.grupo_convite}` : ''}` }));
+  for (let i = 0; i < linhas.length; i += 500) ok(await db.from('fila_envio').insert(linhas.slice(i, i + 500)));
+  return linhas.length;
 }
 
 async function recusarCadastro(telefone, avisar = true) {
@@ -248,6 +269,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, enviar, enviarBotoes, avisarEquipe, aprovarCadastro, recusarCadastro, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, enviar, enviarBotoes, avisarEquipe, aprovarCadastro, recusarCadastro, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

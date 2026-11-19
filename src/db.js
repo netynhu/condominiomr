@@ -37,6 +37,7 @@ const PADRAO = {
   telefone_portaria: '',
   grupo_jid: '',
   grupo_nome: '',
+  grupo_convite: '',
   horario_administracao: 'segunda a sexta, das 9h às 18h',
   instrucoes_extras: '',
   grupo_chamar_privado: '1',

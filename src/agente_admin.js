@@ -194,9 +194,11 @@ async function executar(nome, args, ctx) {
     case 'cadastrar_morador': {
       const telefone = normalizarTelefone(args.telefone);
       if (telefone.length < 12) return { ok: false, erro: 'Telefone inválido: precisa do DDD.' };
-      ok(await db.from('moradores').upsert({ nome: args.nome, telefone, vaga: args.vaga || null, unidade_id: await unidadeId(args.bloco, args.apartamento) }, { onConflict: 'telefone' }));
+      const m = ok(await db.from('moradores').upsert({ nome: args.nome, telefone, vaga: args.vaga || null, unidade_id: await unidadeId(args.bloco, args.apartamento) }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single());
       await db.from('contatos_pendentes').delete().eq('telefone', telefone);
-      return { ok: true, cadastrado: args.nome };
+      let boasVindas = false;
+      try { boasVindas = await sv.boasVindas(m); } catch (e) { console.error('[admin] boas-vindas', e.message); }
+      return { ok: true, cadastrado: args.nome, boas_vindas_enviada_com_botao_do_grupo: boasVindas };
     }
     case 'resumo_do_predio': {
       const { panorama } = require('./rotas/inteligencia');

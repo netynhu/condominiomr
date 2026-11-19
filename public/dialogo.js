@@ -13,6 +13,8 @@
   .dlg.perigo .dlg-ok{background:#B42318;border-color:#B42318}
   .dlg-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:101;background:#101828;color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;box-shadow:0 12px 28px -8px rgba(16,24,40,.5);max-width:calc(100% - 32px);animation:dlgIn .2s ease}
   @media (max-width:520px){.dlg-fundo{place-items:end center;padding:0}.dlg{max-width:none;border-radius:20px 20px 0 0;padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}.dlg-acoes button{flex:1}}
+  .campo-erro{border-color:#D92D20!important;box-shadow:0 0 0 4px rgba(217,45,32,.12)!important}
+  .msg-erro{display:block;color:#B42318;font-size:.8rem;font-weight:600;margin-top:4px}
   @keyframes dlgIn{from{opacity:0}to{opacity:1}}
   @media (prefers-reduced-motion:reduce){.dlg-fundo,.dlg-toast{animation:none}}`;
   const st = document.createElement('style');
@@ -41,6 +43,44 @@
       b.focus();
     });
   }
+
+  // Validação dos formulários com mensagens do sistema (desliga os balões do navegador)
+  function mensagemDoCampo(c) {
+    const v = c.validity;
+    if (v.valueMissing) return c.type === 'radio' ? 'Escolha uma opção.' : 'Preencha este campo.';
+    if (v.typeMismatch && c.type === 'email') return 'Digite um e-mail válido.';
+    if (v.tooShort) return `Use pelo menos ${c.minLength} caracteres.`;
+    if (v.rangeUnderflow || v.rangeOverflow) return 'Valor fora do permitido.';
+    return 'Confira este campo.';
+  }
+  function limpar(c) {
+    c.classList.remove('campo-erro');
+    const m = c.parentElement && c.parentElement.querySelector(':scope > .msg-erro');
+    if (m) m.remove();
+  }
+  function preparar(form) { form.noValidate = true; }
+  document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('form').forEach(preparar));
+  new MutationObserver(() => document.querySelectorAll('form:not([novalidate])').forEach(preparar)).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener('input', (e) => { if (e.target.classList?.contains('campo-erro')) limpar(e.target); }, true);
+  document.addEventListener('change', (e) => { if (e.target.classList?.contains('campo-erro')) limpar(e.target); }, true);
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (form.checkValidity()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    let primeiro = null;
+    form.querySelectorAll('input, select, textarea').forEach((c) => {
+      limpar(c);
+      if (c.willValidate && !c.checkValidity()) {
+        c.classList.add('campo-erro');
+        const m = document.createElement('span'); m.className = 'msg-erro'; m.textContent = mensagemDoCampo(c);
+        (c.type === 'radio' || c.type === 'checkbox' ? c.closest('label') || c : c).insertAdjacentElement('afterend', m);
+        if (!primeiro) primeiro = c;
+      }
+    });
+    if (primeiro) { primeiro.focus({ preventScroll: true }); primeiro.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    window.dialogo.toast('Confira os campos destacados em vermelho.');
+  }, true);
 
   window.dialogo = {
     confirmar: (titulo, opts = {}) => abrir({ titulo, cancelar: 'Cancelar', ok: 'Confirmar', icone: opts.perigo ? '!' : '?', ...opts }),

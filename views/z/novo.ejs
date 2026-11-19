@@ -6,7 +6,7 @@
     <div class="locais" role="radiogroup" aria-label="Local do problema">
       <% for (const [k, nome] of LOCAIS) { %>
         <label class="local">
-          <input type="radio" name="local" value="<%= k %>" required>
+          <input type="radio" name="local" value="<%= k %>">
           <span><%- icone(k) %><%= nome %></span>
         </label>
       <% } %>
