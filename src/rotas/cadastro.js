@@ -162,6 +162,13 @@ router.post('/equipe/:id/link', admin, a(async (req, res) => {
   res.redirect('/equipe');
 }));
 
+router.post('/equipe/:id/excluir', admin, a(async (req, res) => {
+  if (req.params.id === req.session.usuario.id) { avisar(req, 'Você não pode excluir o seu próprio acesso.', 'erro'); return res.redirect('/equipe'); }
+  const u = ok(await db.from('usuarios').delete().eq('id', req.params.id).select('nome').single());
+  avisar(req, `Acesso de ${u.nome} excluído.`);
+  res.redirect('/equipe');
+}));
+
 router.post('/equipe', admin, a(async (req, res) => {
   const { id, nome, perfil, telefone } = req.body;
   let { email, senha } = req.body;

@@ -17,6 +17,7 @@ app.set('views', path.join(__dirname, '..', 'views'));
 app.disable('x-powered-by');
 
 app.use('/static', express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
+app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/icone-192.png'));
 app.get('/saude', (req, res) => res.json({ ok: true, faltando }));
 
 // ---------- Webhook da Uazapi (antes do login) ----------

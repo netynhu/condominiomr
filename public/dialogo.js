@@ -39,7 +39,8 @@
       const b = document.createElement('button'); b.type = 'button'; b.className = 'dlg-ok'; b.textContent = ok; b.onclick = () => fechar(true); acoes.appendChild(b);
       fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(false); });
       document.addEventListener('keydown', tecla);
-      document.body.appendChild(fundo);
+      // Dentro de uma janela aberta (dialog), precisa ficar dentro dela para aparecer por cima
+      (document.querySelector('dialog[open]') || document.body).appendChild(fundo);
       b.focus();
     });
   }

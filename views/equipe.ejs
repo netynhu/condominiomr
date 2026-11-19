@@ -4,37 +4,53 @@
   <div><h1>Equipe e acessos</h1><p class="muted">Quem entra no sistema. Cada perfil vê só a sua parte. O zelador entra pelo link enviado no WhatsApp, sem senha.</p></div>
 </div>
 
-<div class="grade2">
+<div class="grade-equipe">
   <div class="tabela">
     <table>
-      <thead><tr><th>Nome</th><th>Perfil</th><th>WhatsApp</th><th>Situação</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Perfil</th><th>Situação</th><th></th></tr></thead>
       <tbody>
         <% for (const x of usuarios) { const semEmail = x.email.endsWith('@sem-email.local'); %>
           <tr>
-            <td><b><%= x.nome %></b><div class="small muted"><%= semEmail ? 'entra pelo link' : x.email %></div></td>
+            <td><b><%= x.nome %></b><div class="small muted"><%= semEmail ? 'entra pelo link' : x.email %><%= x.telefone ? ' · ' + u.formatarTelefone(x.telefone) : '' %></div></td>
             <td><%= perfis[x.perfil] %></td>
-            <td class="num"><%= x.telefone ? u.formatarTelefone(x.telefone) : '-' %></td>
             <td><span class="tag <%= x.ativo ? 'resolvido' : '' %>"><%= x.ativo ? 'Ativo' : 'Bloqueado' %></span></td>
             <td>
-              <div class="acoes">
+              <div class="acoes equipe-acoes">
                 <% if (x.ativo) { %>
                 <form method="post" action="/equipe/<%= x.id %>/link" data-confirmar="Gerar um novo link de acesso para <%= x.nome %>? O link anterior deixa de funcionar.">
-                  <button class="btn sec peq" type="submit">Enviar link de acesso</button>
+                  <button class="btn sec peq" type="submit">Enviar link</button>
                 </form>
                 <% } %>
-                <details><summary class="small">Editar</summary>
-                  <form class="campos" method="post" action="/equipe" style="margin-top:8px;min-width:220px">
-                    <input type="hidden" name="id" value="<%= x.id %>">
-                    <input name="nome" value="<%= x.nome %>" required>
-                    <input type="email" name="email" value="<%= x.email %>" required>
-                    <select name="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= x.perfil === k ? 'selected' : '' %>><%= n %></option><% } %></select>
-                    <input name="telefone" value="<%= x.telefone || '' %>" placeholder="WhatsApp">
-                    <input type="password" name="senha" placeholder="Nova senha (deixe vazio para manter)" autocomplete="new-password">
-                    <label class="check"><input type="checkbox" name="ativo" <%= x.ativo ? 'checked' : '' %>> Ativo</label>
-                    <button class="btn peq" type="submit">Salvar</button>
-                  </form>
-                </details>
+                <button class="btn sec peq" type="button" data-abrir="editar-<%= x.id %>">Editar</button>
               </div>
+              <dialog class="janela" id="editar-<%= x.id %>">
+                <form class="campos" method="post" action="/equipe">
+                  <div class="janela-topo"><h2>Editar acesso</h2><button class="icone-btn" type="button" data-fechar aria-label="Fechar">✕</button></div>
+                  <input type="hidden" name="id" value="<%= x.id %>">
+                  <label>Nome<input name="nome" value="<%= x.nome %>" required></label>
+                  <div class="linha-campos">
+                    <label>Perfil<select name="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= x.perfil === k ? 'selected' : '' %>><%= n %></option><% } %></select></label>
+                    <label>WhatsApp<input name="telefone" value="<%= x.telefone ? u.formatarTelefone(x.telefone) : '' %>" inputmode="tel" placeholder="(11) 99999-8888"></label>
+                  </div>
+                  <% if (semEmail) { %>
+                    <input type="hidden" name="email" value="<%= x.email %>">
+                    <p class="small muted">Entra pelo link enviado no WhatsApp, sem e-mail e senha.</p>
+                  <% } else { %>
+                    <div class="linha-campos">
+                      <label>E-mail<input type="email" name="email" value="<%= x.email %>" required></label>
+                      <label>Nova senha<input type="password" name="senha" minlength="8" placeholder="Deixe vazio para manter" autocomplete="new-password"></label>
+                    </div>
+                  <% } %>
+                  <label class="check"><input type="checkbox" name="ativo" <%= x.ativo ? 'checked' : '' %>> Acesso ativo</label>
+                  <div class="janela-acoes">
+                    <% if (x.id !== usuario.id) { %><button class="btn perigo" type="submit" form="excluir-<%= x.id %>">Excluir acesso</button><% } %>
+                    <span style="flex:1"></span>
+                    <button class="btn sec" type="button" data-fechar>Cancelar</button>
+                    <button class="btn" type="submit">Salvar</button>
+                  </div>
+                </form>
+                <form id="excluir-<%= x.id %>" method="post" action="/equipe/<%= x.id %>/excluir" data-confirmar="Excluir o acesso de <%= x.nome %>? A pessoa deixa de entrar no sistema e de receber os chamados no WhatsApp. Isso não pode ser desfeito."></form>
+              </dialog>
             </td>
           </tr>
         <% } %>
@@ -56,6 +72,13 @@
   </form>
 </div>
 <script>
+document.addEventListener('click', (e) => {
+  const abrir = e.target.closest('[data-abrir]');
+  if (abrir) document.getElementById(abrir.dataset.abrir).showModal();
+  const fechar = e.target.closest('[data-fechar]');
+  if (fechar) fechar.closest('dialog').close();
+  if (e.target.tagName === 'DIALOG') e.target.close();
+});
 (function () {
   const perfil = document.getElementById('perfil');
   const dicas = {

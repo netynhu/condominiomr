@@ -197,3 +197,15 @@ details[open]>summary::before{content:"−"}
 hr{border:0;border-top:1px solid var(--line);width:100%;margin:0}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- Janela (dialog) ---------- */
+.equipe-acoes{flex-wrap:nowrap;justify-content:flex-end}
+.janela{border:0;padding:0;border-radius:16px;width:min(560px,calc(100% - 32px));box-shadow:0 24px 48px -12px rgba(16,24,40,.35);color:var(--ink)}
+.janela::backdrop{background:rgba(12,27,31,.5)}
+.janela>form{padding:22px}
+.janela-topo{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.janela-acoes{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}
+@media (max-width:520px){.janela-acoes .btn{flex:1}.janela-acoes span{display:none}}
+.grade-equipe{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+.grade-equipe .tabela td{vertical-align:middle}
+@media (max-width:1180px){.grade-equipe{grid-template-columns:1fr}}

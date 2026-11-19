@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640">
+  <defs>
+    <linearGradient id="ceu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B4E66"/><stop offset="1" stop-color="#0F2E3D"/></linearGradient>
+    <linearGradient id="sol" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD166"/><stop offset="1" stop-color="#F4A52C"/></linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#ceu)"/>
+  <g transform="translate(160 70) scale(0.625)">
+    <circle cx="356" cy="150" r="46" fill="url(#sol)"/>
+    <g fill="#FFFFFF"><rect x="148" y="132" width="92" height="214" rx="14"/><rect x="256" y="196" width="108" height="150" rx="14"/></g>
+    <g fill="#1B4E66">
+      <rect x="170" y="160" width="18" height="18" rx="4"/><rect x="200" y="160" width="18" height="18" rx="4"/>
+      <rect x="170" y="196" width="18" height="18" rx="4"/><rect x="200" y="196" width="18" height="18" rx="4"/>
+      <rect x="170" y="232" width="18" height="18" rx="4"/><rect x="200" y="232" width="18" height="18" rx="4"/>
+      <rect x="170" y="268" width="18" height="18" rx="4"/><rect x="200" y="268" width="18" height="18" rx="4"/>
+      <rect x="280" y="222" width="18" height="18" rx="4"/><rect x="314" y="222" width="18" height="18" rx="4"/>
+      <rect x="280" y="258" width="18" height="18" rx="4"/><rect x="314" y="258" width="18" height="18" rx="4"/>
+    </g>
+    <path d="M128 360 Q256 452 384 360" fill="none" stroke="url(#sol)" stroke-width="30" stroke-linecap="round"/>
+  </g>
+  <text x="320" y="440" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="96" fill="#FFFFFF" letter-spacing="-2">Smille</text>
+  <text x="320" y="496" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="30" fill="#FFD166" letter-spacing="8">PARADA INGLESA</text>
+</svg>
