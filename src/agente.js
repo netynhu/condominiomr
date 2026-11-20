@@ -119,6 +119,9 @@ async function executar(nome, args, ctx) {
       return l.map((c) => ({ numero: c.id, titulo: c.titulo, status: sv.ROTULO_STATUS[c.status], aberto_em: dataHora(c.criado_em), observacao: c.observacao_equipe || undefined }));
     }
     case 'registrar_reclamacao': {
+      if (morador.autocadastro && morador.conferido === false && (await getConfig()).autocadastro_reclamacao_conferido !== '0') {
+        return { ok: false, erro: 'O cadastro deste morador foi feito pelo grupo e ainda não foi conferido pela administração. Explique com gentileza que reclamações ficam liberadas depois dessa conferência, que costuma levar poucos dias. Se for algo urgente ou perigoso, oriente a falar com a portaria agora. Chamados de manutenção e dúvidas funcionam normalmente.' };
+      }
       const r = await sv.registrarReclamacao({ morador, ...args });
       ctx.acoes.push(`reclamação ${r.id}`);
       return { ok: true, protocolo: r.id, portaria_avisada: true };
@@ -377,12 +380,12 @@ async function tratarAvaliacao(morador, texto) {
   return true;
 }
 
-// Quem escreve e não é morador cadastrado: o cadastro é feito só pela administração, no painel.
-// A pessoa recebe uma orientação (no máximo uma vez a cada 24h) e o número aparece no painel para a administração.
-// Nenhuma informação do prédio é passada para quem não é morador.
-// Quem não é morador cadastrado (nem da administração) é ignorado: o assistente não responde,
-// não grava e não mostra no painel. O cadastro é feito só pela administração, no painel.
-async function atenderNaoCadastrado() {}
+// Quem não é morador cadastrado (nem da administração): só é atendido se pedir o cadastro.
+// Quem está no grupo dos moradores se cadastra sozinho; quem não está é orientado a procurar a administração.
+// Qualquer outra mensagem de número desconhecido é ignorada (não responde e não grava).
+async function atenderNaoCadastrado(tel, nome, texto) {
+  try { await require('./autocadastro').atender(tel, nome, texto); } catch (e) { console.error('[autocadastro]', e.message); }
+}
 
 // Processa tudo o que a pessoa mandou de uma vez
 async function processar(tel) {
@@ -397,7 +400,10 @@ async function processar(tel) {
     const admin = await require('./agente_admin').acharAdmin(tel);
     if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
     const morador = await sv.acharMorador(tel);
-    if (!morador || !morador.ativo) return atenderNaoCadastrado(tel, b.nome, texto);
+    if (!morador) return atenderNaoCadastrado(tel, b.nome, texto);
+    if (!morador.ativo) return;
+    // Botão antigo do cadastro clicado por quem já está cadastrado: não interessa ao assistente
+    if (/^\s*(\[\[cad_[a-z_]+\]\]\s*)+$/.test(texto)) return;
 
     const limite = dentroDoLimite(tel);
     if (!limite.ok) {
@@ -435,6 +441,7 @@ const BOTOES = {
 async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, botao }) {
   if (botao) {
     if (BOTOES[botao]) return BOTOES[botao];
+    if (/^cad_[a-z_]+$/.test(botao)) return `[[${botao}]]`; // botões do autocadastro
     const voltou = /^reclamacao_voltou:(\d+)$/.exec(botao);
     if (voltou) return `O problema da reclamação nº ${voltou[1]} voltou a acontecer.`;
     if (botao === 'reclamacao_ok') return 'Está resolvido, obrigado!';

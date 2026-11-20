@@ -261,3 +261,7 @@ alter table contatos_pendentes add column if not exists dados jsonb not null def
 
 -- Atualiza o cache da API do Supabase para enxergar tudo o que foi criado acima
 notify pgrst, 'reload schema';
+
+-- 007: autocadastro pelo grupo
+alter table moradores add column if not exists autocadastro boolean not null default false;
+alter table moradores add column if not exists conferido boolean not null default true;

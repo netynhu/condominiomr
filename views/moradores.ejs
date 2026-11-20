@@ -1,8 +1,38 @@
 <%- include('partials/topo') %>
 <div class="cabeca">
-  <div><h1>Moradores</h1><p class="muted"><%= total %> cadastrados. Só números cadastrados aqui são atendidos pelo assistente.</p></div>
+  <div><h1>Moradores</h1><p class="muted"><%= total %> cadastrados. Só números cadastrados aqui são atendidos pelo assistente.<%= autocadastro ? ' Quem está no grupo também pode se cadastrar sozinho.' : '' %></p></div>
   <form method="get" action="/moradores" class="acoes"><input name="q" id="q" value="<%= busca %>" placeholder="Buscar nome, telefone, apto ou vaga" style="width:240px"><button class="btn sec" type="submit">Buscar</button></form>
 </div>
+
+<% if (paraConferir.length) { %>
+<div class="card" style="margin-bottom:20px">
+  <div class="acoes" style="justify-content:space-between;align-items:center">
+    <div><h2>Cadastros pelo grupo para conferir <span class="tag alta"><%= paraConferir.length %></span></h2>
+      <p class="small muted">Estas pessoas estão no grupo e se cadastraram sozinhas. Confira se o apartamento está certo. Enquanto não forem conferidas, elas abrem chamados e tiram dúvidas, mas não registram reclamação.</p></div>
+    <% if (paraConferir.length > 1) { %><form method="post" action="/moradores/conferir-todos" data-confirmar="Marcar os <%= paraConferir.length %> cadastros como conferidos?"><button class="btn sec" type="submit">Conferir todos</button></form><% } %>
+  </div>
+  <div class="tabela" style="box-shadow:none">
+    <table>
+      <thead><tr><th>Unidade</th><th>Nome</th><th>Vínculo</th><th>Vaga</th><th>Cadastrou em</th><th></th></tr></thead>
+      <tbody>
+        <% for (const m of paraConferir) { %>
+          <tr>
+            <td class="num"><%= m.unidade ? (m.unidade.bloco ? m.unidade.bloco + ' · ' : '') + m.unidade.numero : '-' %><% if (m.naUnidade > 4) { %> <span class="tag nova" title="Muitos cadastros no mesmo apartamento"><%= m.naUnidade %> no apto</span><% } %></td>
+            <td><a href="/moradores/<%= m.id %>"><%= m.nome %></a><div class="small muted"><%= u.formatarTelefone(m.telefone) %></div></td>
+            <td><%= { proprietario: 'Proprietário', inquilino: 'Inquilino', morador: 'Mora com o titular', outro: 'Outro' }[m.tipo] || m.tipo %></td>
+            <td class="num"><%= m.vaga || '-' %></td>
+            <td class="small muted"><%= u.dataHora(m.criado_em) %></td>
+            <td><div class="acoes equipe-acoes">
+              <form method="post" action="/moradores/<%= m.id %>/conferir"><button class="btn peq" type="submit">Conferido</button></form>
+              <a class="btn sec peq" href="/moradores/<%= m.id %>">Corrigir</a>
+            </div></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<% } %>
 
 <div class="grade2">
   <div class="tabela">
@@ -13,7 +43,7 @@
         <% for (const m of lista) { %>
           <tr style="<%= m.ativo ? '' : 'opacity:.5' %>">
             <td class="num"><%= m.unidade ? (m.unidade.bloco ? m.unidade.bloco + ' · ' : '') + m.unidade.numero : '-' %></td>
-            <td><a href="/moradores/<%= m.id %>"><%= m.nome %></a> <span class="small muted"><%= m.tipo %></span></td>
+            <td><a href="/moradores/<%= m.id %>"><%= m.nome %></a> <span class="small muted"><%= m.tipo %></span><% if (m.autocadastro && m.conferido === false) { %> <span class="tag alta">a conferir</span><% } %></td>
             <td class="num"><%= u.formatarTelefone(m.telefone) %></td>
             <td class="num"><%= m.vaga || '-' %></td>
             <td><%= m.aceita_avisos ? 'Sim' : 'Não' %></td>
@@ -25,6 +55,21 @@
   </div>
 
   <div style="display:flex;flex-direction:column;gap:16px">
+    <% if (autocadastro) { %>
+    <details class="card"<%= total ? '' : ' open' %>>
+      <summary>Convidar moradores pelo grupo</summary>
+      <% if (!temGrupo) { %>
+        <p class="small muted">Primeiro escolha o grupo dos moradores em <a href="/whatsapp/grupos">WhatsApp &gt; Grupos</a> e peça ao síndico para adicionar o número do assistente no grupo.</p>
+      <% } else { %>
+        <p class="small muted">O assistente posta esta mensagem no grupo <b><%= grupoNome || 'dos moradores' %></b>. Quem tocar no link e enviar a mensagem pronta é cadastrado, se o número estiver no grupo.</p>
+        <div class="ia small"><%= convite %></div>
+        <form method="post" action="/moradores/convite-grupo" data-confirmar="Postar o convite de cadastro no grupo <%= grupoNome || 'dos moradores' %>?">
+          <button class="btn" type="submit"<%= linkCadastro ? '' : ' disabled' %>>Postar convite no grupo</button>
+        </form>
+        <% if (!linkCadastro) { %><p class="small muted">O WhatsApp do assistente não está conectado agora.</p><% } %>
+      <% } %>
+    </details>
+    <% } %>
     <form class="card campos" method="post" action="/moradores" id="novo">
       <h2>Cadastrar morador</h2>
       <label>Nome<input name="nome" id="novo-nome" value="<%= novo.nome %>" required></label>

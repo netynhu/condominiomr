@@ -83,6 +83,18 @@ async function listarGrupos() {
   return (json.groups || []).map((g) => ({ jid: g.JID || g.jid, nome: g.Name || g.name || g.Subject || '(sem nome)' }));
 }
 
+// Telefones de quem está no grupo (a Uazapi devolve o número mesmo quando o grupo usa LID)
+const cacheParticipantes = new Map(); // jid -> { em, tels }
+async function participantesDoGrupo(grupoJid) {
+  const c = cacheParticipantes.get(grupoJid);
+  if (c && Date.now() - c.em < 2 * 60000) return c.tels;
+  const json = await chamar('/group/info', { method: 'POST', body: { groupjid: grupoJid } });
+  const lista = json.Participants || json.participants || [];
+  const tels = new Set(lista.map((p) => telefoneDoJid(p.PhoneNumber || p.phoneNumber || p.JID || '')).filter(Boolean));
+  cacheParticipantes.set(grupoJid, { em: Date.now(), tels });
+  return tels;
+}
+
 // Envia texto para uma pessoa. Nunca escreve em grupo: o assistente só lê o grupo.
 // Mensagens enviadas há pouco: evita que, na conversa consigo mesmo, o sistema leia a própria resposta
 const enviadasRecentes = new Map(); // chave (id ou texto) -> hora
@@ -233,4 +245,4 @@ function lerWebhook(body) {
   };
 }
 
-module.exports = { numeroDaInstancia, status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };
+module.exports = { participantesDoGrupo, numeroDaInstancia, status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };

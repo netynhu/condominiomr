@@ -9,14 +9,7 @@ const { a, exigir, avisar } = require('./comum');
 
 const admin = exigir('admin');
 
-async function unidadeId(bloco, numero) {
-  bloco = String(bloco || '').trim().toUpperCase();
-  numero = String(numero || '').trim();
-  if (!numero) return null;
-  const [u] = ok(await db.from('unidades').select('id').eq('bloco', bloco).eq('numero', numero).limit(1));
-  if (u) return u.id;
-  return ok(await db.from('unidades').insert({ bloco, numero }).select('id').single()).id;
-}
+const { unidadeId } = require('../servicos');
 
 // ---------- Moradores ----------
 router.get('/moradores', admin, a(async (req, res) => {
@@ -28,7 +21,52 @@ router.get('/moradores', admin, a(async (req, res) => {
     ? moradores.filter((m) => [m.nome, m.telefone, m.email, m.unidade?.numero, m.unidade?.bloco, m.vaga && `vaga ${m.vaga}`].join(' ').toLowerCase().includes(busca))
     : moradores;
   lista.sort((x, y) => `${x.unidade?.bloco || ''}${(x.unidade?.numero || '').padStart(6, '0')}`.localeCompare(`${y.unidade?.bloco || ''}${(y.unidade?.numero || '').padStart(6, '0')}`));
-  res.render('moradores', { titulo: 'Moradores', lista, busca, total: moradores.length, novo: { telefone: req.query.telefone || '', nome: req.query.nome || '' } });
+  // Cadastros feitos pelo próprio morador (pelo grupo) que a administração ainda não conferiu
+  const porUnidade = {};
+  for (const m of moradores) if (m.unidade_id && m.ativo) porUnidade[m.unidade_id] = (porUnidade[m.unidade_id] || 0) + 1;
+  const paraConferir = moradores.filter((m) => m.autocadastro && m.conferido === false)
+    .sort((x, y) => new Date(y.criado_em) - new Date(x.criado_em))
+    .map((m) => ({ ...m, naUnidade: porUnidade[m.unidade_id] || 0 }));
+  const cfg = await getConfig();
+  let linkCadastro = '';
+  try { const n = await require('../uazapi').numeroDaInstancia(); if (n) linkCadastro = `https://wa.me/${n}?text=${encodeURIComponent('Quero me cadastrar')}`; } catch { /* sem conexão */ }
+  res.render('moradores', {
+    titulo: 'Moradores', lista, busca, total: moradores.length, paraConferir, linkCadastro, convite: textoConviteCadastro(cfg, linkCadastro),
+    autocadastro: cfg.autocadastro !== '0', temGrupo: Boolean(cfg.grupo_jid), grupoNome: cfg.grupo_nome,
+    novo: { telefone: req.query.telefone || '', nome: req.query.nome || '' },
+  });
+}));
+
+function textoConviteCadastro(cfg, link) {
+  return `📝 *Cadastro no assistente do ${cfg.nome_predio}*\n\nO prédio agora tem um assistente no WhatsApp. Com ele você abre chamados de manutenção (pode mandar foto e áudio), tira dúvidas sobre as regras do prédio e recebe os avisos da administração.\n\nPara se cadastrar, toque no link abaixo e envie a mensagem que já vem pronta:\n👉 ${link || '(link do assistente)'}\n\nO cadastro leva 1 minuto. Só números que estão neste grupo conseguem se cadastrar.\n\n_${cfg.nome_predio} · Administração_`;
+}
+
+// Posta no grupo o convite para os moradores se cadastrarem
+router.post('/moradores/convite-grupo', admin, a(async (req, res) => {
+  const cfg = await getConfig();
+  if (!cfg.grupo_jid) { avisar(req, 'Escolha o grupo dos moradores em WhatsApp > Grupos antes de enviar o convite.', 'erro'); return res.redirect('/moradores'); }
+  const uazapi = require('../uazapi');
+  const n = await uazapi.numeroDaInstancia();
+  if (!n) { avisar(req, 'O WhatsApp do assistente não está conectado. Conecte em WhatsApp antes de enviar o convite.', 'erro'); return res.redirect('/moradores'); }
+  try {
+    await uazapi.enviarNoGrupo(cfg.grupo_jid, textoConviteCadastro(cfg, `https://wa.me/${n}?text=${encodeURIComponent('Quero me cadastrar')}`));
+    avisar(req, `Convite enviado no grupo ${cfg.grupo_nome || 'dos moradores'}. Os cadastros vão aparecer aqui em "Cadastros pelo grupo para conferir".`);
+  } catch (e) {
+    avisar(req, `Não foi possível postar no grupo: ${e.message}. Confira se o número do assistente está no grupo e pode enviar mensagens.`, 'erro');
+  }
+  res.redirect('/moradores');
+}));
+
+router.post('/moradores/conferir-todos', admin, a(async (req, res) => {
+  const r = ok(await db.from('moradores').update({ conferido: true }).eq('autocadastro', true).eq('conferido', false).select('id'));
+  avisar(req, `${r.length} cadastro(s) conferido(s). Esses moradores já podem registrar reclamações.`);
+  res.redirect('/moradores');
+}));
+
+router.post('/moradores/:id/conferir', admin, a(async (req, res) => {
+  const m = ok(await db.from('moradores').update({ conferido: true }).eq('id', req.params.id).select('nome').single());
+  avisar(req, `Cadastro de ${m.nome} conferido.`);
+  res.redirect(req.body.voltar === 'ficha' ? `/moradores/${req.params.id}` : '/moradores');
 }));
 
 router.post('/moradores', admin, a(async (req, res) => {
@@ -204,6 +242,9 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
+  v.autocadastro = req.body.autocadastro === 'on' ? '1' : '0';
+  v.autocadastro_reclamacao_conferido = req.body.autocadastro_reclamacao_conferido === 'on' ? '1' : '0';
+  v.unidades_validas = String(req.body.unidades_validas || '').replace(/\s*\n\s*/g, ', ').trim();
   v.avisar_autor_reclamacao = req.body.avisar_autor_reclamacao === 'on' ? '1' : '0';
   v.sindico_reclamacoes = ['todas', 'reincidencia', 'nenhuma'].includes(req.body.sindico_reclamacoes) ? req.body.sindico_reclamacoes : 'todas';
   v.sindico_reincidencia_minima = String(Math.min(5, Math.max(2, Number(req.body.sindico_reincidencia_minima) || 3)));

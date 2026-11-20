@@ -50,6 +50,14 @@
   <label class="check"><input type="checkbox" name="grupo_chamar_privado" id="grupo_chamar_privado" <%= c.grupo_chamar_privado === '1' ? 'checked' : '' %>> Quando um morador relatar um problema no grupo, chamar ele no privado para abrir o chamado</label>
   <p class="small muted">O assistente nunca responde no grupo. Com esta opção ligada, ele manda no máximo uma mensagem privada por morador a cada 24 horas.</p>
 
+  <h2 style="margin-top:8px">Cadastro pelo grupo</h2>
+  <label class="check"><input type="checkbox" name="autocadastro" id="autocadastro" <%= c.autocadastro !== '0' ? 'checked' : '' %>> Quem está no grupo dos moradores pode se cadastrar sozinho, mandando "Quero me cadastrar" para o assistente</label>
+  <p class="small muted">O assistente confere se o número está no grupo. Se estiver, pede nome, apartamento, vínculo e vaga. Se não estiver, orienta a procurar a administração. O convite para o grupo fica em Moradores.</p>
+  <label>Apartamentos que existem no prédio<textarea name="unidades_validas" id="unidades_validas" rows="3" placeholder="Ex.: 101-110, 201-210, 401-408   ou, com blocos: A/101-104, B/101-104"><%= c.unidades_validas || '' %></textarea></label>
+  <p class="small muted">O assistente só aceita estes apartamentos no cadastro. Use faixas separadas por vírgula. Com blocos, escreva o bloco antes da barra. Vazio aceita qualquer número.</p>
+  <label class="check"><input type="checkbox" name="autocadastro_reclamacao_conferido" id="autocadastro_reclamacao_conferido" <%= c.autocadastro_reclamacao_conferido !== '0' ? 'checked' : '' %>> Só liberar reclamações depois que a administração conferir o cadastro</label>
+  <p class="small muted">Evita que alguém se cadastre no apartamento errado para reclamar de um vizinho. Chamados e dúvidas funcionam desde o primeiro dia.</p>
+
   <h2 style="margin-top:8px">Instruções extras para o assistente</h2>
   <label>Regras da casa que o assistente deve seguir<textarea name="instrucoes_extras" id="instrucoes_extras" placeholder="Ex.: Encomendas ficam na portaria até 7 dias. Para reservar o salão, encaminhe à administração."><%= c.instrucoes_extras %></textarea></label>
   <div class="acoes"><button class="btn" type="submit">Salvar</button></div>

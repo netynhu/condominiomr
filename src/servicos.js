@@ -148,6 +148,16 @@ async function postarNoGrupo(titulo, texto) {
   return msg;
 }
 
+// Acha ou cria a unidade (bloco + número)
+async function unidadeId(bloco, numero) {
+  bloco = String(bloco || '').trim().toUpperCase();
+  numero = String(numero || '').trim();
+  if (!numero) return null;
+  const [u] = ok(await db.from('unidades').select('id').eq('bloco', bloco).eq('numero', numero).limit(1));
+  if (u) return u.id;
+  return ok(await db.from('unidades').insert({ bloco, numero }).select('id').single()).id;
+}
+
 // Compara unidades ignorando letras e espaços ("209", "apto 209", "B-209")
 const chaveUnidade = (s) => soDigitos(s) || String(s || '').trim().toLowerCase();
 
@@ -286,5 +296,5 @@ async function enfileirar(publico, texto, avisoId) {
 
 module.exports = {
   acharMorador, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
-  registrarHistoricoChamado, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
+  registrarHistoricoChamado, unidadeId, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

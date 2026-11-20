@@ -46,6 +46,9 @@ const PADRAO = {
   horario_silencio: 'das 22h às 8h de domingo a quinta; das 23h às 9h na sexta, no sábado e em véspera de feriado',
   sindico_reclamacoes: 'todas',       // todas | reincidencia | nenhuma
   sindico_reincidencia_minima: '3',
+  autocadastro: '1',                        // morador que está no grupo pode se cadastrar pelo WhatsApp
+  unidades_validas: '',                     // ex.: "101-110, 201-210" ou "A/101-104" (vazio = aceita qualquer número)
+  autocadastro_reclamacao_conferido: '1',   // reclamação só depois que a administração conferir o cadastro
 };
 
 async function getConfig() {
