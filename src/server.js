@@ -116,6 +116,8 @@ app.use(async (req, res, next) => {
         u.perfil === 'zelador' ? 0 : contar('reclamacoes', (q) => q.eq('status', 'nova')),
       ]);
       res.locals.contadores = { chamados, reclamacoes };
+      // Dúvidas sem resposta (tabela da migração 008; sem ela, fica sem número)
+      if (u.perfil === 'admin') res.locals.contadores.duvidas = await contar('duvidas', (q) => q.eq('status', 'aberta')).catch(() => 0);
     } catch { /* menu sem números se o banco falhar */ }
   }
   next();

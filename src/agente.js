@@ -9,7 +9,7 @@ const { salvarFoto, salvarVideo, LIMITE_VIDEO } = require('./fotos');
 const { inserirMensagem } = require('./db');
 const { rotuloUnidade, dataExtenso, primeiroNome, normalizarTelefone, dataHora, hojeParaIA } = require('./util');
 
-const LIMITE_DOCS = 40000; // caracteres de regimento/convenção enviados ao modelo
+const LIMITE_DOCS = 100000; // caracteres de documentos enviados ao modelo (cerca de 25 mil tokens; com cache, custo baixo)
 const HISTORICO = 16;      // mensagens anteriores lembradas na conversa
 
 // Uma conversa por vez para cada telefone (evita respostas cruzadas quando a pessoa manda várias mensagens)
@@ -95,8 +95,20 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: { aceita: { type: 'boolean' } }, required: ['aceita'] },
   },
   {
+    name: 'perguntar_administracao',
+    description: 'Use quando o morador faz uma PERGUNTA cuja resposta não está escrita nos documentos, nas instruções nem nas respostas da administração. Registra a dúvida e avisa a administração na hora pelo WhatsApp. Quando ela responder, o morador recebe a resposta e você aprende. Devolve o número da dúvida.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pergunta: { type: 'string', description: 'A pergunta do morador, clara e completa, como uma pergunta geral sobre o prédio (ex.: "Como faço o cadastro no controle de acesso do prédio?")' },
+        contexto: { type: 'string', description: 'Detalhes que ajudam a administração a responder (opcional)' },
+      },
+      required: ['pergunta'],
+    },
+  },
+  {
     name: 'encaminhar_administracao',
-    description: 'Encaminha à administração/síndico um assunto que você não pode resolver: dúvida sem resposta nos documentos, pedido de autorização, financeiro, conflito sério ou quando o morador pedir para falar com uma pessoa.',
+    description: 'Encaminha à administração/síndico um PEDIDO que precisa de ação ou decisão de uma pessoa: autorização, assunto financeiro (boleto, valores, acordos), conflito sério ou quando o morador pede para falar com uma pessoa. Para perguntas sem resposta nos documentos, use perguntar_administracao.',
     parameters: {
       type: 'object',
       properties: { assunto: { type: 'string' }, resumo: { type: 'string' } },
@@ -155,6 +167,11 @@ async function executar(nome, args, ctx) {
       ok(await db.from('moradores').update({ aceita_avisos: !!args.aceita }).eq('id', morador.id));
       return { ok: true };
     }
+    case 'perguntar_administracao': {
+      const d = await require('./duvidas').registrar({ morador, pergunta: args.pergunta, contexto: args.contexto });
+      ctx.acoes.push(`dúvida ${d.id}`);
+      return { ok: true, numero_da_duvida: d.id, administracao_avisada: true };
+    }
     case 'encaminhar_administracao': {
       const ch = await sv.abrirChamado({ morador, titulo: args.assunto, descricao: args.resumo, local: rotuloUnidade(morador.unidade), categoria: 'administracao', prioridade: 'normal' });
       ctx.acoes.push(`encaminhado ${ch.id}`);
@@ -174,6 +191,11 @@ async function montarParteFixa(cfg) {
   const docs = ok(await db.from('documentos').select('titulo, conteudo').eq('ativo', true).order('criado_em'));
   let textoDocs = docs.map((d) => `### ${d.titulo}\n${d.conteudo}`).join('\n\n');
   if (textoDocs.length > LIMITE_DOCS) textoDocs = textoDocs.slice(0, LIMITE_DOCS) + '\n[...documento cortado...]';
+  // O que a administração já respondeu e marcou para o assistente aprender
+  const aprendido = await require('./duvidas').conhecimento();
+  const textoAprendido = aprendido.length
+    ? `\nRESPOSTAS DA ADMINISTRAÇÃO (perguntas que moradores já fizeram; use como informação oficial)\n${aprendido.map((x) => `- Pergunta: ${x.pergunta}\n  Resposta: ${x.resposta}`).join('\n')}\n`
+    : '';
 
   return `Você é "${cfg.nome_assistente}", o assistente oficial de WhatsApp do ${cfg.nome_predio}. Você conversa individualmente com cada morador. Os dados de quem está falando e a data de hoje vêm na próxima mensagem do sistema.
 
@@ -181,7 +203,12 @@ COMO SE COMPORTAR
 - Português do Brasil, cordial e direto. Mensagens curtas, próprias de WhatsApp. Sem markdown, sem títulos, no máximo um emoji quando fizer sentido.
 - Chame a pessoa pelo primeiro nome ou como ela preferir.
 - Resolva usando as ferramentas: abrir chamado, registrar reclamação, consultar agenda, agendar lembrete. Depois de usar uma, informe o número/protocolo.
-- Dúvidas sobre regras: responda SOMENTE com base nos documentos abaixo e cite o artigo ou documento. Se não estiver nos documentos, diga que vai encaminhar e use encaminhar_administracao. Nunca invente regra, valor, data ou nome.
+- Dúvidas sobre o prédio: responda SOMENTE com o que está escrito nos documentos, nas instruções da administração ou nas respostas da administração (abaixo). Cite o artigo ou documento quando houver. Nunca invente regra, valor, data, nome, procedimento ou responsável.
+
+QUANDO VOCÊ NÃO SABE A RESPOSTA (muito importante)
+- Se a resposta não está escrita nas fontes acima, você NÃO sabe. Não deduza e não suponha. Isso vale também para "existe X no prédio?" (academia, bicicletário, salão, serviço): se não estiver escrito, não afirme que existe nem que não existe. Não diga coisas como "isso é feito pela administração", "procure a portaria" ou "é só pedir ao zelador" se isso não estiver escrito.
+- Seja sincero: diga que ainda não tem essa informação e que vai perguntar à administração. Chame perguntar_administracao com a pergunta na mesma hora (não pergunte se pode perguntar). Depois diga o número da dúvida e que você avisa aqui mesmo assim que a administração responder.
+- Nunca diga que encaminhou, avisou alguém ou gerou protocolo sem ter chamado a ferramenta e recebido o número de volta.
 - Reclamações: garanta ao morador que o nome dele não será revelado. Não julgue nem exponha o vizinho.
 - Nunca fale de dívidas, inadimplência ou dados de outros moradores. Nunca revele informações de outras unidades.
 - Assuntos financeiros (boleto, valores, acordos): encaminhe à administração.
@@ -202,7 +229,7 @@ REGRA ANTES DE REGISTRAR RECLAMAÇÃO DE BARULHO, OBRA, SERVIÇO OU MUDANÇA:
 
 ACOMPANHAMENTO DE RECLAMAÇÕES
 - Quando uma reclamação do morador foi resolvida e ele disser que o problema continua ou voltou, use reabrir_reclamacao com o número dela, em vez de abrir uma nova.
-${cfg.instrucoes_extras ? `\nINSTRUÇÕES DA ADMINISTRAÇÃO\n${cfg.instrucoes_extras}\n` : ''}
+${cfg.instrucoes_extras ? `\nINSTRUÇÕES DA ADMINISTRAÇÃO\n${cfg.instrucoes_extras}\n` : ''}${textoAprendido}
 DOCUMENTOS DO CONDOMÍNIO
 ${textoDocs || '(nenhum documento cadastrado ainda: encaminhe dúvidas de regras à administração)'}`;
 }
@@ -235,6 +262,25 @@ function registrarUso(uso) {
   console.log(`[agente] tokens: entrada ${uso.prompt_tokens} (cache ${cache}, ${pct}%), saída ${uso.completion_tokens}`);
 }
 
+// Rede de segurança: se o assistente disse que encaminhou, avisou ou vai verificar com a administração,
+// mas não chamou nenhuma ferramenta, registra a dúvida de verdade (a administração é avisada) e informa o número.
+// Só afirmações ("encaminhei", "vou verificar", "protocolo gerado"); oferecer ("quer que eu encaminhe?") não conta.
+const PROMETEU_ENCAMINHAR = /protocolo (gerado|n[ºo°]|registrado)|(j[áa] )?encaminhei|vou encaminhar|estou encaminhando|repassei|vou repassar|vou (verificar|confirmar|perguntar|checar|consultar)|avisei a administra|a administra[çc][ãa]o (j[áa] foi avisada|(vai|ir[áa]) (te )?(retornar|responder|entrar em contato))/i;
+const SO_OFERECEU = /(quer|deseja|gostaria) que eu|posso (encaminhar|repassar|perguntar)/i;
+async function garantirEncaminhamento(resposta, morador, pergunta, ctx) {
+  if (!resposta || ctx.acoes.length || !PROMETEU_ENCAMINHAR.test(resposta) || SO_OFERECEU.test(resposta)) return resposta;
+  try {
+    const d = await require('./duvidas').registrar({ morador, pergunta: String(pergunta).replace(/^\[[^\]]*\]\s*/, '').slice(0, 500), contexto: `Resposta dada pelo assistente: ${resposta.slice(0, 400)}` });
+    ctx.acoes.push(`dúvida ${d.id}`);
+    console.log('[agente] prometeu encaminhar sem ferramenta: dúvida', d.id, 'registrada');
+    // Troca a resposta inteira: a do modelo pode ter número de protocolo inventado
+    return `${primeiroNome(morador.nome)}, ainda não tenho essa informação. Já perguntei à administração (pergunta nº ${d.id}) e te aviso aqui assim que responderem. Posso ajudar em mais alguma coisa?`;
+  } catch (e) {
+    console.error('[agente] registrar dúvida automática', e.message);
+    return resposta;
+  }
+}
+
 async function responder(morador, texto, { foto = null, video = null, limparMidias } = {}) {
   const cfg = await getConfig();
   const anteriores = ok(await db.from('mensagens').select('direcao, texto').eq('telefone', morador.telefone).order('criado_em', { ascending: false }).limit(HISTORICO + 1)).reverse();
@@ -265,7 +311,7 @@ async function responder(morador, texto, { foto = null, video = null, limparMidi
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.4 });
     registrarUso(r.usage);
     const msg = r.choices[0].message;
-    if (!msg.tool_calls?.length) return (msg.content || '').trim();
+    if (!msg.tool_calls?.length) return garantirEncaminhamento((msg.content || '').trim(), morador, texto, ctx);
     mensagens.push(msg);
     for (const call of msg.tool_calls) {
       let resultado;
@@ -552,4 +598,4 @@ async function avaliarMensagemDoGrupo(morador, texto) {
     ['🔧 Abrir chamado|abrir_chamado_grupo', 'Não precisa|nao_precisa'], { planoB: 'É só responder aqui.', moradorId: morador.id });
 }
 
-module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, _teste: { montarParteFixa, FERRAMENTAS } };
+module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, _teste: { montarParteFixa, FERRAMENTAS, responder } };

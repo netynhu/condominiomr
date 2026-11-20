@@ -50,10 +50,11 @@ router.get('/', exigir(), a(async (req, res) => {
     db.from('eventos').select('id, titulo, inicio').gte('inicio', agora).order('inicio').limit(4).then(ok),
     contar('moradores', (q) => q.eq('ativo', true)),
   ]);
+  const duvidas = await contar('duvidas', (q) => q.eq('status', 'aberta')).catch(() => 0);
   let whats = null;
   try { whats = await uazapi.status(); } catch { whats = null; }
   res.render('inicio', {
-    titulo: 'Início', abertos, urgentes, reclNovas, pendentes, fila, eventos, moradores, whats,
+    titulo: 'Início', duvidas, abertos, urgentes, reclNovas, pendentes, fila, eventos, moradores, whats,
     resumo: cfg.resumo_dia || '', resumoEm: cfg.resumo_dia_em || '',
   });
 }));

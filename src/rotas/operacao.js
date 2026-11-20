@@ -4,6 +4,46 @@ const sv = require('../servicos');
 const { localParaISO } = require('../util');
 const { a, exigir, avisar } = require('./comum');
 
+// ---------- Dúvidas que o assistente não soube responder ----------
+router.get('/duvidas', exigir('admin'), a(async (req, res) => {
+  const r = await db.from('duvidas').select('*, morador:moradores(id, nome, unidade:unidades(bloco, numero))').order('criado_em', { ascending: false }).limit(300);
+  if (r.error) {
+    return res.render('duvidas', { titulo: 'Dúvidas dos moradores', abertas: [], aprendidas: [], outras: [], semTabela: true });
+  }
+  const abertas = r.data.filter((d) => d.status === 'aberta').reverse(); // mais antigas primeiro
+  const aprendidas = r.data.filter((d) => d.status === 'respondida' && d.ensinar);
+  const outras = r.data.filter((d) => (d.status === 'respondida' && !d.ensinar) || d.status === 'descartada').slice(0, 30);
+  res.render('duvidas', { titulo: 'Dúvidas dos moradores', abertas, aprendidas, outras, semTabela: false });
+}));
+
+router.post('/duvidas/:id/responder', exigir('admin'), a(async (req, res) => {
+  const resposta = String(req.body.resposta || '').trim();
+  if (resposta.length < 2) { avisar(req, 'Escreva a resposta antes de enviar.', 'erro'); return res.redirect('/duvidas'); }
+  const { responder } = require('../duvidas');
+  const r = await responder(Number(req.params.id), resposta, {
+    ensinar: req.body.ensinar === 'on', enviarMorador: req.body.enviar === 'on', usuarioNome: req.session.usuario.nome,
+  });
+  avisar(req, `Pergunta nº ${r.duvida.id} respondida.${r.enviado ? ' O morador recebeu a resposta no WhatsApp.' : ''}${r.duvida.ensinar ? ' O assistente já usa essa resposta nas próximas conversas.' : ''}`);
+  res.redirect('/duvidas');
+}));
+
+// Corrige uma resposta já ensinada (não manda nada de novo ao morador)
+router.post('/duvidas/:id/editar', exigir('admin'), a(async (req, res) => {
+  const resposta = String(req.body.resposta || '').trim();
+  const dados = { ensinar: req.body.ensinar === 'on' };
+  if (resposta) dados.resposta = resposta;
+  if (req.body.pergunta) dados.pergunta = String(req.body.pergunta).trim().slice(0, 500);
+  ok(await db.from('duvidas').update(dados).eq('id', req.params.id));
+  avisar(req, dados.ensinar ? 'Resposta atualizada. O assistente usa a versão nova a partir de agora.' : 'O assistente deixou de usar esta resposta.');
+  res.redirect('/duvidas');
+}));
+
+router.post('/duvidas/:id/descartar', exigir('admin'), a(async (req, res) => {
+  await require('../duvidas').descartar(Number(req.params.id), req.session.usuario.nome);
+  avisar(req, 'Pergunta descartada. O morador não recebe mensagem.');
+  res.redirect('/duvidas');
+}));
+
 // ---------- Chamados (administração e zelador) ----------
 router.get('/chamados', exigir('admin', 'zelador'), a(async (req, res) => {
   const filtro = req.query.status || 'abertos';

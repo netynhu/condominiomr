@@ -1,0 +1,67 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Dúvidas dos moradores</h1><p class="muted">Perguntas que o assistente não soube responder. Ele foi sincero com o morador e prometeu retorno. Ao responder, o morador recebe a resposta no WhatsApp e o assistente aprende para as próximas vezes.</p></div>
+</div>
+
+<% if (semTabela) { %>
+  <div class="alerta">Falta rodar a migração <code>008_duvidas.sql</code> no SQL do Supabase. Sem ela, o assistente não consegue registrar as perguntas sem resposta.</div>
+<% } %>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>Esperando resposta <% if (abertas.length) { %><span class="tag nova"><%= abertas.length %></span><% } %></h2>
+  <% if (!abertas.length) { %>
+    <p class="muted">Nenhuma pergunta esperando. Quando o assistente não souber algo, a pergunta aparece aqui e o síndico recebe um aviso no WhatsApp.</p>
+  <% } %>
+  <div class="lista">
+    <% for (const d of abertas) { const horas = Math.floor((Date.now() - new Date(d.criado_em).getTime()) / 3600000); %>
+      <form class="item campos duvida" method="post" action="/duvidas/<%= d.id %>/responder" style="flex-direction:column;align-items:stretch">
+        <div class="acoes" style="justify-content:space-between">
+          <div><b>nº <%= d.id %> · <%= d.pergunta %></b>
+            <div class="small muted"><%= d.morador ? d.morador.nome + ' · ' + u.rotuloUnidade(d.morador.unidade) : 'morador' %> · <%= u.dataHora(d.criado_em) %><% if (horas >= 24) { %> · <span class="tag nova">há <%= Math.floor(horas / 24) %> dia(s)</span><% } %></div>
+            <% if (d.contexto) { %><div class="small muted" style="margin-top:4px"><%= d.contexto %></div><% } %>
+          </div>
+        </div>
+        <label>Resposta<textarea name="resposta" rows="3" required placeholder="Escreva a resposta como se fosse para o morador. Ex.: O cadastro no controle de acesso é feito na portaria, de segunda a sexta, das 9h às 17h. Leve um documento com foto."></textarea></label>
+        <label class="check"><input type="checkbox" name="enviar" checked> Enviar a resposta para <%= d.morador ? u.primeiroNome(d.morador.nome) : 'o morador' %> no WhatsApp</label>
+        <label class="check"><input type="checkbox" name="ensinar" checked> Ensinar o assistente: usar esta resposta quando outro morador perguntar a mesma coisa</label>
+        <div class="acoes">
+          <button class="btn" type="submit">Responder</button>
+          <button class="btn sec" type="submit" form="descartar-<%= d.id %>">Descartar</button>
+        </div>
+      </form>
+      <form id="descartar-<%= d.id %>" method="post" action="/duvidas/<%= d.id %>/descartar" data-confirmar="Descartar a pergunta nº <%= d.id %>? O morador não recebe resposta."></form>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+  <h2>O que o assistente já aprendeu <span class="tag resolvido"><%= aprendidas.length %></span></h2>
+  <p class="small muted">Estas respostas entram no conhecimento do assistente, junto com os documentos do prédio. Corrija aqui se algo mudar.</p>
+  <% if (!aprendidas.length) { %><p class="muted">Nada ainda.</p><% } %>
+  <div class="lista">
+    <% for (const d of aprendidas) { %>
+      <details class="item" style="display:block">
+        <summary><b><%= d.pergunta %></b><div class="small muted"><%= d.resposta %></div></summary>
+        <form class="campos" method="post" action="/duvidas/<%= d.id %>/editar" style="margin-top:10px">
+          <label>Pergunta<input name="pergunta" value="<%= d.pergunta %>"></label>
+          <label>Resposta<textarea name="resposta" rows="3"><%= d.resposta %></textarea></label>
+          <label class="check"><input type="checkbox" name="ensinar" checked> O assistente usa esta resposta</label>
+          <p class="small muted">Respondida por <%= d.respondida_por || 'administração' %> em <%= d.respondida_em ? u.dataHora(d.respondida_em) : '-' %>. Salvar não manda mensagem ao morador.</p>
+          <div class="acoes"><button class="btn sec" type="submit">Salvar</button></div>
+        </form>
+      </details>
+    <% } %>
+  </div>
+</div>
+
+<% if (outras.length) { %>
+<details class="card">
+  <summary>Respondidas só para o morador e descartadas (<%= outras.length %>)</summary>
+  <div class="lista" style="margin-top:10px">
+    <% for (const d of outras) { %>
+      <div class="item"><div><b><%= d.pergunta %></b><div class="small muted"><%= d.status === 'descartada' ? 'Descartada' : d.resposta %></div></div></div>
+    <% } %>
+  </div>
+</details>
+<% } %>
+<%- include('partials/rodape') %>

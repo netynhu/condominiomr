@@ -83,6 +83,23 @@ async function verificarManutencoes() {
   }
 }
 
+// Uma vez por dia (a partir das 9h), lembra a administração das perguntas de moradores sem resposta
+async function lembrarDuvidas() {
+  const { hora, dataISO } = agoraBR();
+  if (hora < 9 || hora >= 20) return;
+  const cfg = await getConfig();
+  if (cfg.duvidas_lembrete_em === dataISO) return;
+  const r = await db.from('duvidas').select('id, pergunta, criado_em').eq('status', 'aberta').lte('criado_em', new Date(Date.now() - 12 * 3600000).toISOString()).order('criado_em').limit(10);
+  if (r.error) return; // migração 008 ainda não rodou
+  await require('./db').setConfig({ duvidas_lembrete_em: dataISO });
+  if (!r.data.length) return;
+  const link = env.APP_URL ? `\n\nResponda pelo painel: ${env.APP_URL}/duvidas` : '';
+  const lista = r.data.map((d) => `• nº ${d.id}: ${d.pergunta.slice(0, 120)}`).join('\n');
+  const titulo = r.data.length === 1 ? '1 pergunta de morador espera' : `${r.data.length} perguntas de moradores esperam`;
+  const texto = `❓ *${titulo} resposta*\n\n${lista}\n\nPara responder por aqui, escreva: *resposta N:* e o texto.${link}`;
+  for (const tel of await require('./duvidas').telefonesDaAdministracao()) await sv.enviar(tel, texto, null, 'síndico');
+}
+
 function seguro(nome, fn) {
   return () => fn().catch((e) => console.error(`[rotina ${nome}]`, e.message));
 }
@@ -92,6 +109,7 @@ function iniciar() {
   setInterval(seguro('lembretes', enviarLembretes), 60000);
   setInterval(seguro('eventos', lembrarEventos), 5 * 60000);
   setInterval(seguro('manutencao', verificarManutencoes), 60 * 60000);
+  setInterval(seguro('duvidas', lembrarDuvidas), 30 * 60000);
   setTimeout(seguro('manutencao', verificarManutencoes), 15000);
   console.log('[rotinas] fila de envio, lembretes, eventos e manutenção ativos');
 }

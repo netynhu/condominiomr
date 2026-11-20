@@ -98,6 +98,24 @@ const FERRAMENTAS = [
     },
   },
   {
+    name: 'listar_duvidas',
+    description: 'Lista as perguntas de moradores que o assistente não soube responder e que esperam resposta da administração.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'responder_duvida',
+    description: 'Responde uma pergunta de morador que o assistente não soube responder. O morador recebe a resposta no WhatsApp e, se ensinar=true, o assistente passa a usar essa resposta nas próximas perguntas. Use quando o síndico escrever algo como "resposta 3: ..." ou responder a uma pergunta listada.',
+    parameters: {
+      type: 'object',
+      properties: {
+        numero: { type: 'number', description: 'Número da dúvida' },
+        resposta: { type: 'string', description: 'A resposta, escrita de forma clara para o morador' },
+        ensinar: { type: 'boolean', description: 'true (padrão) para o assistente aprender; false se a resposta vale só para este morador' },
+      },
+      required: ['numero', 'resposta'],
+    },
+  },
+  {
     name: 'resumo_do_predio',
     description: 'Gera o resumo do dia ou responde a uma pergunta sobre os dados do prédio (chamados, reclamações, agenda, manutenção, grupo).',
     parameters: { type: 'object', properties: { pergunta: { type: 'string', description: 'Vazio para o resumo do dia' } } },
@@ -181,6 +199,17 @@ async function executar(nome, args, ctx) {
       try { boasVindas = await sv.boasVindas(m); } catch (e) { console.error('[admin] boas-vindas', e.message); }
       return { ok: true, cadastrado: args.nome, boas_vindas_enviada_com_botao_do_grupo: boasVindas };
     }
+    case 'listar_duvidas': {
+      const l = ok(await db.from('duvidas').select('id, pergunta, criado_em, morador:moradores(nome)').eq('status', 'aberta').order('criado_em').limit(20));
+      return l.length ? l.map((d) => ({ numero: d.id, pergunta: d.pergunta, de: d.morador?.nome || 'morador', quando: dataHora(d.criado_em) })) : { nenhuma: true };
+    }
+    case 'responder_duvida': {
+      const { responder } = require('./duvidas');
+      const atual = await db.from('duvidas').select('id, status').eq('id', Number(args.numero)).maybeSingle();
+      if (atual.error || !atual.data) return { ok: false, erro: `Não existe dúvida nº ${args.numero}.` };
+      const r = await responder(Number(args.numero), args.resposta, { ensinar: args.ensinar !== false, usuarioNome: admin.nome });
+      return { ok: true, numero: r.duvida.id, morador_recebeu: r.enviado, assistente_aprendeu: r.duvida.ensinar };
+    }
     case 'resumo_do_predio': {
       const { panorama } = require('./rotas/inteligencia');
       const dados = await panorama();
@@ -206,6 +235,7 @@ COMO TRABALHAR
 - Pedido de "aviso de manutenção/obra/reunião numa data": crie o evento na agenda (criar_evento) E prepare o aviso para o grupo, mostrando a prévia.
 - Ao atualizar chamado, confirme o número e o novo status.
 - Reclamações: nunca tente descobrir quem reclamou.
+- DÚVIDAS DE MORADORES: quando o síndico escrever "resposta N: texto" (ou responder a uma pergunta que você listou), use responder_duvida. A resposta vai para o morador e o assistente aprende. Se a resposta só vale para aquele morador, use ensinar=false.
 - Ao final de cada ação, diga em uma linha o que foi feito.
 - Se uma ferramenta devolver erro, conte ao síndico em linguagem simples qual foi o problema (ex.: grupo não configurado) e o que fazer. Não diga só que houve um problema técnico.`;
 }
