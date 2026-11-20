@@ -27,6 +27,27 @@ app.post('/webhook/uazapi/:segredo', express.json({ limit: '5mb' }), (req, res) 
   tratarWebhook(req.body).catch((e) => console.error('[webhook]', e.message));
 });
 
+// O WhatsApp devolve ao webhook cópias das mensagens que o próprio sistema enviou.
+// A memória do processo não basta (a hospedagem pode rodar mais de um processo), então confere no banco:
+// toda mensagem enviada fica em "mensagens" com o id do WhatsApp. Espera uns segundos porque a gravação
+// acontece logo depois do envio, e a cópia pode chegar antes.
+async function ecoDoSistema(ev) {
+  await new Promise((r) => setTimeout(r, 5000));
+  const ids = (ev.ids || []).filter(Boolean).map((id) => String(id).split(':').pop());
+  const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+  const texto = norm(ev.texto);
+  const r = await db.from('mensagens').select('wa_id, texto').eq('direcao', 'saida')
+    .gte('criado_em', new Date(Date.now() - 15 * 60000).toISOString()).order('criado_em', { ascending: false }).limit(300);
+  if (r.error) { console.error('[eco] consulta', r.error.message); return false; }
+  return r.data.some((m) => {
+    if (m.wa_id && ids.includes(String(m.wa_id).split(':').pop())) return true;
+    if (!texto) return false;
+    const enviado = norm(m.texto.replace(/\n\[botões:[^\]]*\]$/, ''));
+    // Igual, ou um pedaço grande da mensagem (mensagem com botões volta só com o corpo)
+    return enviado === texto || (texto.length >= 40 && enviado.includes(texto));
+  });
+}
+
 async function tratarWebhook(body) {
   const ev = uazapi.lerWebhook(body);
   if (ev.tipo === 'conexao') {
@@ -37,10 +58,13 @@ async function tratarWebhook(body) {
 
   // Mensagem escrita no próprio celular do número do prédio: só vale na conversa consigo mesmo
   // (o chat é o próprio número). Mensagens dele para outras pessoas nunca são tratadas.
-  if (ev.proprio && !ev.ehGrupo) {
+  if (!ev.ehGrupo) {
     const numero = await uazapi.numeroDaInstancia();
     const { variantesTelefone } = require('./util');
-    if (!numero || !variantesTelefone(ev.telefone).includes(numero)) return;
+    const doProprioNumero = Boolean(numero && variantesTelefone(ev.telefone).includes(numero));
+    if (ev.proprio && !doProprioNumero) return;
+    // Tudo que parece vir do próprio número do assistente pode ser cópia do que ele mesmo enviou
+    if (doProprioNumero && (await ecoDoSistema(ev))) return;
   }
 
   if (ev.ehGrupo) {
