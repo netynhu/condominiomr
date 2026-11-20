@@ -98,14 +98,26 @@ async function participantesDoGrupo(grupoJid) {
 // Envia texto para uma pessoa. Nunca escreve em grupo: o assistente só lê o grupo.
 // Mensagens enviadas há pouco: evita que, na conversa consigo mesmo, o sistema leia a própria resposta
 const enviadasRecentes = new Map(); // chave (id ou texto) -> hora
-function lembrarEnvio(json, texto) {
+// O id pode vir com o número na frente ("5511...:ABC123"): guarda e compara só a parte final
+const chaveId = (id) => 'id:' + String(id).split(':').pop();
+// Texto comparado sem espaços extras (o WhatsApp às vezes devolve com quebras diferentes)
+const chaveTexto = (t) => 'tx:' + String(t).replace(/\s+/g, ' ').trim();
+function limparAntigas() {
   const agora = Date.now();
   for (const [k, t] of enviadasRecentes) if (agora - t > 10 * 60000) enviadasRecentes.delete(k);
-  const id = idEnviado(json);
-  if (id) enviadasRecentes.set('id:' + id, agora);
-  if (texto) enviadasRecentes.set('tx:' + String(texto).trim(), agora);
 }
-const foiEnviadaPeloSistema = (id, texto) => enviadasRecentes.has('id:' + id) || (texto && enviadasRecentes.has('tx:' + String(texto).trim()));
+// Chamado ANTES do envio: o eco da mensagem pode chegar no webhook antes da resposta da Uazapi
+function lembrarTexto(texto) {
+  limparAntigas();
+  if (texto) enviadasRecentes.set(chaveTexto(texto), Date.now());
+}
+function lembrarEnvio(json, texto) {
+  limparAntigas();
+  const id = idEnviado(json);
+  if (id) enviadasRecentes.set(chaveId(id), Date.now());
+  if (texto) enviadasRecentes.set(chaveTexto(texto), Date.now());
+}
+const foiEnviadaPeloSistema = (ids, texto) => ids.some((id) => id && enviadasRecentes.has(chaveId(id))) || Boolean(texto && enviadasRecentes.has(chaveTexto(texto)));
 
 // Mensagem com link: desliga a prévia do link (linkPreview: false)
 const temLink = (texto) => /https?:\/\/|www\.|wa\.me\//i.test(String(texto || ''));
@@ -117,6 +129,7 @@ async function enviarTexto(numero, texto, { digitando = true } = {}) {
     throw new Error('Envio bloqueado: o assistente só envia mensagens privadas.');
   }
   const delay = digitando ? Math.min(4000, 800 + texto.length * 15) : 0;
+  lembrarTexto(texto);
   const json = await chamar('/send/text', { method: 'POST', body: semPrevia({ number: soDigitos(alvo), text: texto, delay }, texto) });
   lembrarEnvio(json, texto);
   return json;
@@ -130,6 +143,7 @@ async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '
   const corpo = { number: soDigitos(alvo), type: tipo, text: texto, choices: escolhas };
   if (rodape) corpo.footerText = rodape;
   if (tipo === 'list') corpo.listButton = botaoLista;
+  lembrarTexto(texto);
   const json = await chamar('/send/menu', { method: 'POST', body: semPrevia(corpo, texto) });
   lembrarEnvio(json, texto);
   return json;
@@ -139,6 +153,7 @@ async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '
 async function enviarFoto(numero, buffer, legenda = '') {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: fotos só no privado.');
+  lembrarTexto(legenda);
   const json = await chamar('/send/media', { method: 'POST', body: semPrevia({ number: soDigitos(alvo), type: 'image', file: buffer.toString('base64'), text: legenda }, legenda) });
   lembrarEnvio(json, legenda);
   return json;
@@ -147,6 +162,7 @@ async function enviarFoto(numero, buffer, legenda = '') {
 // Posta no grupo dos moradores. Só aceita o grupo configurado no painel.
 async function enviarNoGrupo(grupoJid, texto) {
   if (!grupoJid || !grupoJid.endsWith('@g.us')) throw new Error('Nenhum grupo dos moradores configurado.');
+  lembrarTexto(texto);
   const json = await chamar('/send/text', { method: 'POST', body: semPrevia({ number: grupoJid, text: texto, delay: 1500 }, texto) });
   lembrarEnvio(json, texto);
   return json;
@@ -222,7 +238,9 @@ function lerWebhook(body) {
     // Mensagem que o próprio dono do número escreveu. Só interessa na conversa consigo mesmo
     // ou no grupo dos moradores. Mensagens dele para outras pessoas são ignoradas.
     const dono = soDigitos(body.owner || '');
-    if (foiEnviadaPeloSistema(m.messageid || m.id, texto)) return { tipo: 'ignorar' };
+    if (foiEnviadaPeloSistema([m.messageid, m.id], texto)) return { tipo: 'ignorar' };
+    // Mensagem com botões ou lista só o sistema envia (ninguém escreve isso à mão): é eco, ignora
+    if (/button|list|interactive|template|nativeflow/i.test(m.messageType || '') && !botao) return { tipo: 'ignorar' };
     const alvoChat = telefoneDoJid(chatid) || soDigitos(body.chat?.phone || '');
     if (ehGrupo) { telefone = dono || telefone; proprio = true; }
     // Conversa consigo mesmo: o chat é o próprio número. Se a Uazapi não informar o dono,

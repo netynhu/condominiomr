@@ -106,7 +106,17 @@ async function atender(tel, nomeWhatsapp, texto) {
   const pendente = await lerPendente(tel);
   const d = { ...(pendente?.dados || {}) };
   const botao = (/\[\[(cad_[a-z_]+)\]\]/.exec(texto) || [])[1] || '';
-  const limpo = texto.replace(/\[\[cad_[a-z_]+\]\]/g, '').trim();
+  // Tirar a citação: ao tocar num botão (ou responder "em cima"), o texto chega com a mensagem citada
+  // na frente, e ela contém palavras como "Corrigir" que não foram escritas pela pessoa
+  let corpo = String(texto);
+  if (corpo.startsWith('[respondendo')) {
+    const fimCitacao = corpo.lastIndexOf('"] ');
+    const fimSimples = corpo.indexOf('] ');
+    corpo = fimCitacao >= 0 ? corpo.slice(fimCitacao + 3) : fimSimples >= 0 ? corpo.slice(fimSimples + 2) : corpo;
+  }
+  // Com botão tocado, vale só o botão
+  const limpo = botao ? '' : corpo.replace(/\[\[cad_[a-z_]+\]\]/g, '').trim();
+  texto = botao ? `[[${botao}]]` : limpo;
   // Pediu de novo no meio do caminho, ou largou a conversa há mais de 7 dias: recomeça
   if (d.etapa && ((PEDIU_CADASTRO.test(limpo) && d.etapa !== 'consentimento') || Date.now() - new Date(d.inicio || 0).getTime() > 7 * DIA)) {
     for (const k of Object.keys(d)) delete d[k];
@@ -146,7 +156,7 @@ async function atender(tel, nomeWhatsapp, texto) {
 
   switch (d.etapa) {
     case 'consentimento': {
-      if (botao === 'cad_nao' || /^n[ãa]o\b|agora n[ãa]o/i.test(limpo)) {
+      if (botao === 'cad_nao' || /^(n[ãa]o|agora n[ãa]o)\s*[.!]?$/i.test(limpo)) {
         await db.from('contatos_pendentes').delete().eq('telefone', pendente.telefone);
         await sv.enviar(tel, 'Tudo bem! Quando quiser se cadastrar, é só mandar "Quero me cadastrar".');
         return true;
