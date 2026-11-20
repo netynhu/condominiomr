@@ -95,6 +95,11 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: { aceita: { type: 'boolean' } }, required: ['aceita'] },
   },
   {
+    name: 'fora_do_assunto',
+    description: 'Chame quando a mensagem do morador é um pedido ou pergunta que NÃO tem nada a ver com o condomínio, o prédio, a convivência ou o atendimento (ex.: receita, futebol, política, piada, tarefa da escola, pedir para escrever texto ou código, conversa sem propósito). NÃO chame para cumprimentos, agradecimentos, despedidas, "ok", nem para assuntos do prédio. Devolve o que dizer.',
+    parameters: { type: 'object', properties: { assunto: { type: 'string', description: 'Do que se trata, em poucas palavras' } }, required: ['assunto'] },
+  },
+  {
     name: 'perguntar_administracao',
     description: 'Use quando o morador faz uma PERGUNTA cuja resposta não está escrita nos documentos, nas instruções nem nas respostas da administração. Registra a dúvida e avisa a administração na hora pelo WhatsApp. Quando ela responder, o morador recebe a resposta e você aprende. Devolve o número da dúvida.',
     parameters: {
@@ -167,6 +172,16 @@ async function executar(nome, args, ctx) {
       ok(await db.from('moradores').update({ aceita_avisos: !!args.aceita }).eq('id', morador.id));
       return { ok: true };
     }
+    case 'fora_do_assunto': {
+      const r = await registrarForaDoAssunto(morador, args.assunto);
+      if (r.bloqueado) ctx.bloqueadoAte = r.ate;
+      if (r.vez && r.vez === r.limite - 1) ctx.avisoPausa = r.horas; // o próximo fora do assunto pausa
+      return r.bloqueado
+        ? { ok: true, pausado: true, instrucao: 'O atendimento foi pausado. Não responda ao assunto.' }
+        : r.desligado
+          ? { ok: true, instrucao: 'Não responda ao assunto. Diga com gentileza que você só atende assuntos do condomínio e ofereça ajuda com o prédio.' }
+          : { ok: true, vez: r.vez, limite: r.limite, instrucao: 'Não responda ao assunto. Diga com gentileza, em uma frase, que você só atende assuntos do condomínio e ofereça ajuda com o prédio. Não fale de pausa: o sistema avisa sozinho.' };
+    }
     case 'perguntar_administracao': {
       const d = await require('./duvidas').registrar({ morador, pergunta: args.pergunta, contexto: args.contexto });
       ctx.acoes.push(`dúvida ${d.id}`);
@@ -209,6 +224,10 @@ QUANDO VOCÊ NÃO SABE A RESPOSTA (muito importante)
 - Se a resposta não está escrita nas fontes acima, você NÃO sabe. Não deduza e não suponha. Isso vale também para "existe X no prédio?" (academia, bicicletário, salão, serviço): se não estiver escrito, não afirme que existe nem que não existe. Não diga coisas como "isso é feito pela administração", "procure a portaria" ou "é só pedir ao zelador" se isso não estiver escrito.
 - Seja sincero: diga que ainda não tem essa informação e que vai perguntar à administração. Chame perguntar_administracao com a pergunta na mesma hora (não pergunte se pode perguntar). Depois diga o número da dúvida e que você avisa aqui mesmo assim que a administração responder.
 - Nunca diga que encaminhou, avisou alguém ou gerou protocolo sem ter chamado a ferramenta e recebido o número de volta.
+
+ASSUNTOS FORA DO CONDOMÍNIO
+- Você só atende assuntos do condomínio. Se a pessoa pedir algo que não tem nada a ver com o prédio (receita, futebol, política, piada, tarefa da escola, escrever textos, conversa sem propósito), não responda ao assunto: chame fora_do_assunto e siga a instrução que ela devolver.
+- Cumprimentos, agradecimentos, "ok" e despedidas não são fora do assunto. Na dúvida se é do prédio, trate como do prédio.
 - Reclamações: garanta ao morador que o nome dele não será revelado. Não julgue nem exponha o vizinho.
 - Nunca fale de dívidas, inadimplência ou dados de outros moradores. Nunca revele informações de outras unidades.
 - Assuntos financeiros (boleto, valores, acordos): encaminhe à administração.
@@ -262,6 +281,36 @@ function registrarUso(uso) {
   console.log(`[agente] tokens: entrada ${uso.prompt_tokens} (cache ${cache}, ${pct}%), saída ${uso.completion_tokens}`);
 }
 
+// ================== Trava para assuntos fora do condomínio ==================
+// Conta as mensagens fora do assunto em 24h. Ao chegar no limite (Ajustes), pausa o atendimento do número.
+// Urgências (vazamento, incêndio, gás, elevador...) passam mesmo com a pausa.
+const URGENCIA = /urg[êe]n|emerg[êe]n|socorro|inc[êe]ndio|fogo|fuma[çc]a|cheiro de g[áa]s|vazamento|vazando|alagad|inunda|preso no elevador|elevador (parado|preso|travado) com|curto.?circuito|choque|desmai|ferid|assalt|invas|arromba|ladr[ãa]o/i;
+
+async function registrarForaDoAssunto(morador, assunto) {
+  const cfg = await getConfig();
+  const limite = Number(cfg.fora_assunto_limite ?? 3);
+  const horas = Number(cfg.fora_assunto_horas || 12);
+  if (!limite) return { desligado: true };
+  const recente = morador.fora_assunto_em && Date.now() - new Date(morador.fora_assunto_em).getTime() < 24 * 3600000;
+  const vez = (recente ? morador.fora_assunto_vezes || 0 : 0) + 1;
+  const dados = { fora_assunto_vezes: vez, fora_assunto_em: new Date().toISOString() };
+  let ate = null;
+  if (vez >= limite) {
+    ate = new Date(Date.now() + horas * 3600000).toISOString();
+    Object.assign(dados, { bloqueado_ate: ate, fora_assunto_vezes: 0 });
+  }
+  const r = await db.from('moradores').update(dados).eq('id', morador.id);
+  if (r.error) { console.error('[fora do assunto]', r.error.message); return { desligado: true }; } // migração 009 ainda não rodou
+  Object.assign(morador, dados);
+  console.log(`[fora do assunto] ${morador.nome}: ${vez}/${limite} (${String(assunto || '').slice(0, 60)})${ate ? ' -> pausado' : ''}`);
+  return ate ? { bloqueado: true, ate, horas } : { vez, limite, horas };
+}
+
+function mensagemDePausa(morador, ate) {
+  const quando = new Date(ate).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', hour: '2-digit', minute: '2-digit' });
+  return `${primeiroNome(morador.nome)}, como as últimas mensagens não eram sobre o condomínio, pausei o atendimento automático deste número até ${quando}. Sou o assistente do prédio e só consigo ajudar com assuntos do condomínio.\n\nSe for urgente (vazamento, incêndio, gás, alguém preso no elevador), pode escrever que eu atendo mesmo assim. Para outros assuntos, fale com a administração ou a portaria.`;
+}
+
 // Rede de segurança: se o assistente disse que encaminhou, avisou ou vai verificar com a administração,
 // mas não chamou nenhuma ferramenta, registra a dúvida de verdade (a administração é avisada) e informa o número.
 // Só afirmações ("encaminhei", "vou verificar", "protocolo gerado"); oferecer ("quer que eu encaminhe?") não conta.
@@ -311,7 +360,13 @@ async function responder(morador, texto, { foto = null, video = null, limparMidi
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.4 });
     registrarUso(r.usage);
     const msg = r.choices[0].message;
-    if (!msg.tool_calls?.length) return garantirEncaminhamento((msg.content || '').trim(), morador, texto, ctx);
+    if (!msg.tool_calls?.length) {
+      const final = await garantirEncaminhamento((msg.content || '').trim(), morador, texto, ctx);
+      // Aviso fixo antes da pausa (não depende da IA lembrar)
+      return ctx.avisoPausa ? `${final}
+
+⚠️ Atenção: se a próxima mensagem também não for sobre o condomínio, o atendimento automático fica pausado por ${ctx.avisoPausa} horas.` : final;
+    }
     mensagens.push(msg);
     for (const call of msg.tool_calls) {
       let resultado;
@@ -323,6 +378,8 @@ async function responder(morador, texto, { foto = null, video = null, limparMidi
       }
       mensagens.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(resultado) });
     }
+    // Chegou no limite de assuntos fora do condomínio: responde com a mensagem fixa de pausa
+    if (ctx.bloqueadoAte) return mensagemDePausa(morador, ctx.bloqueadoAte);
   }
   return 'Registrei sua mensagem e a administração vai dar retorno.';
 }
@@ -459,6 +516,12 @@ async function processar(tel) {
 
     await inserirMensagem({ morador_id: morador.id, telefone: morador.telefone, direcao: 'entrada', texto, wa_id: b.waId || null });
     await db.from('moradores').update({ ultima_interacao: new Date().toISOString() }).eq('id', morador.id);
+
+    // Atendimento pausado por assuntos fora do condomínio: só passam urgências (a mensagem fica registrada)
+    if (morador.bloqueado_ate && new Date(morador.bloqueado_ate) > new Date() && !URGENCIA.test(texto)) {
+      console.log(`[fora do assunto] ${morador.nome} pausado até ${morador.bloqueado_ate}: mensagem não respondida`);
+      return;
+    }
 
     if (await tratarAvaliacao(morador, texto)) return;
 

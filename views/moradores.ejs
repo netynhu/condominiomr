@@ -43,7 +43,7 @@
         <% for (const m of lista) { %>
           <tr style="<%= m.ativo ? '' : 'opacity:.5' %>">
             <td class="num"><%= m.unidade ? (m.unidade.bloco ? m.unidade.bloco + ' · ' : '') + m.unidade.numero : '-' %></td>
-            <td><a href="/moradores/<%= m.id %>"><%= m.nome %></a> <span class="small muted"><%= m.tipo %></span><% if (m.autocadastro && m.conferido === false) { %> <span class="tag alta">a conferir</span><% } %></td>
+            <td><a href="/moradores/<%= m.id %>"><%= m.nome %></a> <span class="small muted"><%= m.tipo %></span><% if (m.autocadastro && m.conferido === false) { %> <span class="tag alta">a conferir</span><% } %><% if (m.bloqueado_ate && new Date(m.bloqueado_ate) > new Date()) { %> <span class="tag nova" title="Atendimento pausado por assuntos fora do condomínio">pausado</span><% } %></td>
             <td class="num"><%= u.formatarTelefone(m.telefone) %></td>
             <td class="num"><%= m.vaga || '-' %></td>
             <td><%= m.aceita_avisos ? 'Sim' : 'Não' %></td>

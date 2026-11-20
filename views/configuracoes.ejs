@@ -50,6 +50,23 @@
   <label class="check"><input type="checkbox" name="grupo_chamar_privado" id="grupo_chamar_privado" <%= c.grupo_chamar_privado === '1' ? 'checked' : '' %>> Quando um morador relatar um problema no grupo, chamar ele no privado para abrir o chamado</label>
   <p class="small muted">O assistente nunca responde no grupo. Com esta opção ligada, ele manda no máximo uma mensagem privada por morador a cada 24 horas.</p>
 
+  <h2 style="margin-top:8px">Assuntos fora do condomínio</h2>
+  <p class="small muted">Quando alguém insiste em perguntar coisas que não têm a ver com o prédio (receitas, futebol, política, tarefas da escola...), o assistente avisa. Se continuar, ele pausa o atendimento daquele número. Mensagens de urgência (vazamento, incêndio, gás, alguém preso no elevador) sempre são atendidas.</p>
+  <div class="linha-campos">
+    <label>Pausar na
+      <select name="fora_assunto_limite" id="fora_assunto_limite">
+        <option value="0" <%= String(c.fora_assunto_limite) === '0' ? 'selected' : '' %>>Nunca (desligado)</option>
+        <% for (const n of [2, 3, 4, 5]) { %><option value="<%= n %>" <%= String(c.fora_assunto_limite || 3) === String(n) ? 'selected' : '' %>><%= n %>ª pergunta fora do assunto (em 24h)</option><% } %>
+      </select>
+    </label>
+    <label>Tempo de pausa
+      <select name="fora_assunto_horas" id="fora_assunto_horas">
+        <% for (const h of [1, 3, 6, 12, 24, 48, 72]) { %><option value="<%= h %>" <%= String(c.fora_assunto_horas || 12) === String(h) ? 'selected' : '' %>><%= h === 1 ? '1 hora' : h + ' horas' %></option><% } %>
+      </select>
+    </label>
+  </div>
+  <p class="small muted">A administração pode liberar antes, na ficha do morador.</p>
+
   <h2 style="margin-top:8px">Cadastro pelo grupo</h2>
   <label class="check"><input type="checkbox" name="autocadastro" id="autocadastro" <%= c.autocadastro !== '0' ? 'checked' : '' %>> Quem está no grupo dos moradores pode se cadastrar sozinho, mandando "Quero me cadastrar" para o assistente</label>
   <p class="small muted">O assistente confere se o número está no grupo. Se estiver, pede nome, apartamento, vínculo e vaga. Se não estiver, orienta a procurar a administração. O convite para o grupo fica em Moradores.</p>

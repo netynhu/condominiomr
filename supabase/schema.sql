@@ -282,3 +282,8 @@ create table if not exists duvidas (
 );
 create index if not exists duvidas_status_idx on duvidas (status, criado_em desc);
 alter table duvidas enable row level security;
+
+-- 009: trava para assuntos fora do condomínio
+alter table moradores add column if not exists fora_assunto_vezes int not null default 0;
+alter table moradores add column if not exists fora_assunto_em timestamptz;
+alter table moradores add column if not exists bloqueado_ate timestamptz;

@@ -49,6 +49,8 @@ const PADRAO = {
   autocadastro: '1',                        // morador que está no grupo pode se cadastrar pelo WhatsApp
   unidades_validas: '',                     // ex.: "101-110, 201-210" ou "A/101-104" (vazio = aceita qualquer número)
   autocadastro_reclamacao_conferido: '1',   // reclamação só depois que a administração conferir o cadastro
+  fora_assunto_limite: '3',                 // perguntas fora do assunto (em 24h) até pausar o atendimento; 0 desliga
+  fora_assunto_horas: '12',                 // por quantas horas o atendimento fica pausado
 };
 
 async function getConfig() {

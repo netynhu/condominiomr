@@ -63,6 +63,12 @@ router.post('/moradores/conferir-todos', admin, a(async (req, res) => {
   res.redirect('/moradores');
 }));
 
+router.post('/moradores/:id/desbloquear', admin, a(async (req, res) => {
+  const m = ok(await db.from('moradores').update({ bloqueado_ate: null, fora_assunto_vezes: 0 }).eq('id', req.params.id).select('nome').single());
+  avisar(req, `Atendimento de ${m.nome} liberado. O assistente volta a responder normalmente.`);
+  res.redirect(`/moradores/${req.params.id}`);
+}));
+
 router.post('/moradores/:id/conferir', admin, a(async (req, res) => {
   const m = ok(await db.from('moradores').update({ conferido: true }).eq('id', req.params.id).select('nome').single());
   avisar(req, `Cadastro de ${m.nome} conferido.`);
@@ -243,6 +249,8 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
   v.autocadastro = req.body.autocadastro === 'on' ? '1' : '0';
+  v.fora_assunto_limite = String(Math.min(10, Math.max(0, parseInt(req.body.fora_assunto_limite, 10) || 0)));
+  v.fora_assunto_horas = String(Math.min(168, Math.max(1, parseInt(req.body.fora_assunto_horas, 10) || 12)));
   v.autocadastro_reclamacao_conferido = req.body.autocadastro_reclamacao_conferido === 'on' ? '1' : '0';
   v.unidades_validas = String(req.body.unidades_validas || '').replace(/\s*\n\s*/g, ', ').trim();
   v.avisar_autor_reclamacao = req.body.avisar_autor_reclamacao === 'on' ? '1' : '0';
