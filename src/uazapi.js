@@ -107,13 +107,17 @@ function lembrarEnvio(json, texto) {
 }
 const foiEnviadaPeloSistema = (id, texto) => enviadasRecentes.has('id:' + id) || (texto && enviadasRecentes.has('tx:' + String(texto).trim()));
 
+// Mensagem com link: desliga a prévia do link (linkPreview: false)
+const temLink = (texto) => /https?:\/\/|www\.|wa\.me\//i.test(String(texto || ''));
+const semPrevia = (corpo, texto) => (temLink(texto) ? { ...corpo, linkPreview: false } : corpo);
+
 async function enviarTexto(numero, texto, { digitando = true } = {}) {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us') || alvo.includes('@newsletter')) {
     throw new Error('Envio bloqueado: o assistente só envia mensagens privadas.');
   }
   const delay = digitando ? Math.min(4000, 800 + texto.length * 15) : 0;
-  const json = await chamar('/send/text', { method: 'POST', body: { number: soDigitos(alvo), text: texto, delay } });
+  const json = await chamar('/send/text', { method: 'POST', body: semPrevia({ number: soDigitos(alvo), text: texto, delay }, texto) });
   lembrarEnvio(json, texto);
   return json;
 }
@@ -126,7 +130,7 @@ async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '
   const corpo = { number: soDigitos(alvo), type: tipo, text: texto, choices: escolhas };
   if (rodape) corpo.footerText = rodape;
   if (tipo === 'list') corpo.listButton = botaoLista;
-  const json = await chamar('/send/menu', { method: 'POST', body: corpo });
+  const json = await chamar('/send/menu', { method: 'POST', body: semPrevia(corpo, texto) });
   lembrarEnvio(json, texto);
   return json;
 }
@@ -135,7 +139,7 @@ async function enviarMenu(numero, texto, escolhas, { tipo = 'button', rodape = '
 async function enviarFoto(numero, buffer, legenda = '') {
   const alvo = String(numero || '');
   if (!alvo || alvo.includes('@g.us')) throw new Error('Envio bloqueado: fotos só no privado.');
-  const json = await chamar('/send/media', { method: 'POST', body: { number: soDigitos(alvo), type: 'image', file: buffer.toString('base64'), text: legenda } });
+  const json = await chamar('/send/media', { method: 'POST', body: semPrevia({ number: soDigitos(alvo), type: 'image', file: buffer.toString('base64'), text: legenda }, legenda) });
   lembrarEnvio(json, legenda);
   return json;
 }
@@ -143,7 +147,7 @@ async function enviarFoto(numero, buffer, legenda = '') {
 // Posta no grupo dos moradores. Só aceita o grupo configurado no painel.
 async function enviarNoGrupo(grupoJid, texto) {
   if (!grupoJid || !grupoJid.endsWith('@g.us')) throw new Error('Nenhum grupo dos moradores configurado.');
-  const json = await chamar('/send/text', { method: 'POST', body: { number: grupoJid, text: texto, delay: 1500 } });
+  const json = await chamar('/send/text', { method: 'POST', body: semPrevia({ number: grupoJid, text: texto, delay: 1500 }, texto) });
   lembrarEnvio(json, texto);
   return json;
 }
