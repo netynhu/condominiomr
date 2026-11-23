@@ -185,7 +185,7 @@ async function executar(nome, args, ctx) {
     }
     case 'consultar_encomendas': {
       const l = await require('./encomendas').doMorador(morador);
-      return l.length ? l.map((e) => ({ numero: e.id, de: e.remetente || undefined, tipo: e.tipo, desde: dataHora(e.recebida_em), observacao: e.observacao || undefined })) : { nenhuma: true, observacao: 'Não há encomenda aguardando retirada no apartamento dele.' };
+      return l.length ? l.map((e) => ({ numero: e.id, desde: dataHora(e.recebida_em), observacao: e.observacao || undefined })) : { nenhuma: true, observacao: 'Não há encomenda aguardando retirada no apartamento dele.' };
     }
     case 'confirmar_retirada_encomenda': {
       const enc = require('./encomendas');
@@ -193,7 +193,7 @@ async function executar(nome, args, ctx) {
       if (!id) {
         const l = await enc.doMorador(morador);
         if (!l.length) return { ok: false, erro: 'Não há encomenda aguardando retirada no apartamento dele.' };
-        if (l.length > 1) return { ok: false, erro: 'Há mais de uma encomenda. Pergunte qual ele retirou.', encomendas: l.map((e) => ({ numero: e.id, de: e.remetente || e.tipo, desde: dataHora(e.recebida_em) })) };
+        if (l.length > 1) return { ok: false, erro: 'Há mais de uma encomenda. Pergunte qual ele retirou.', encomendas: l.map((e) => ({ numero: e.id, observacao: e.observacao || undefined, desde: dataHora(e.recebida_em) })) };
         id = l[0].id;
       }
       const r = await enc.retirar(id, { morador });

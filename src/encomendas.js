@@ -7,7 +7,6 @@ const uazapi = require('./uazapi');
 const { lerFoto } = require('./fotos');
 const { agoraBR, dataHora, primeiroNome, rotuloUnidade } = require('./util');
 
-const TIPOS = { pacote: 'pacote', envelope: 'envelope', comida: 'comida (retire logo)', volumoso: 'volume grande', outro: 'encomenda' };
 const DIA = 24 * 3600000;
 
 async function moradoresDaUnidade(unidadeId) {
@@ -15,8 +14,9 @@ async function moradoresDaUnidade(unidadeId) {
   return ok(await db.from('moradores').select('id, nome, telefone').eq('unidade_id', unidadeId).eq('ativo', true));
 }
 
-// "pacote · Mercado Livre · caixa grande"
-const detalhe = (e) => [TIPOS[e.tipo] || 'encomenda', e.remetente, e.observacao].filter(Boolean).join(' · ');
+// Só a observação da portaria (ex.: "Mercado Livre, caixa grande"), em uma linha própria
+const detalhe = (e) => (e.observacao ? `
+(${e.observacao})` : '');
 
 // Avisa os moradores do apartamento: foto (se houver) e botão "Já retirei"
 async function avisarMoradores(e, { lembrete = false } = {}) {
@@ -29,10 +29,8 @@ async function avisarMoradores(e, { lembrete = false } = {}) {
   for (const m of moradores) {
     const nome = primeiroNome(m.nome);
     const corpo = lembrete
-      ? `📦 Oi, ${nome}! Lembrete: tem uma encomenda sua esperando na portaria do ${cfg.nome_predio}, desde ${dataHora(e.recebida_em)}.
-(${detalhe(e)})`
-      : `📦 Oi, ${nome}! Chegou uma encomenda para você na portaria do ${cfg.nome_predio}.
-(${detalhe(e)})
+      ? `📦 Oi, ${nome}! Lembrete: tem uma encomenda sua esperando na portaria do ${cfg.nome_predio}, desde ${dataHora(e.recebida_em)}.${detalhe(e)}`
+      : `📦 Oi, ${nome}! Chegou uma encomenda para você na portaria do ${cfg.nome_predio}.${detalhe(e)}
 
 Pode retirar quando quiser.`;
     try {
@@ -51,9 +49,9 @@ Pode retirar quando quiser.`;
 }
 
 // A portaria registra uma encomenda e os moradores são avisados na hora
-async function registrar({ unidadeId, remetente, tipo, observacao, foto, por }) {
+async function registrar({ unidadeId, observacao, foto, por }) {
   const e = ok(await db.from('encomendas').insert({
-    unidade_id: unidadeId, remetente: (remetente || '').trim() || null, tipo: TIPOS[tipo] ? tipo : 'pacote',
+    unidade_id: unidadeId,
     observacao: (observacao || '').trim().slice(0, 200) || null, foto: foto || null, recebida_por: por || null,
   }).select().single());
   const r = await avisarMoradores(e);
@@ -76,7 +74,7 @@ async function retirar(id, { morador = null, por = null, devolvida = false } = {
 // Encomendas do apartamento do morador que ainda aguardam retirada
 async function doMorador(morador) {
   if (!morador.unidade_id) return [];
-  return ok(await db.from('encomendas').select('id, remetente, tipo, observacao, recebida_em').eq('unidade_id', morador.unidade_id).eq('status', 'aguardando').order('recebida_em'));
+  return ok(await db.from('encomendas').select('id, observacao, recebida_em').eq('unidade_id', morador.unidade_id).eq('status', 'aguardando').order('recebida_em'));
 }
 
 // Rotina (a cada 30 min, por condomínio): lembretes ao morador e aviso à administração
@@ -99,11 +97,11 @@ async function cobrarRetiradas() {
   const unidades = ok(await db.from('unidades').select('id, bloco, numero'));
   const lista = atrasadas.slice(0, 15).map((e) => {
     const u = unidades.find((x) => x.id === e.unidade_id);
-    return `• ${u ? rotuloUnidade(u) : 'unidade ?'}: ${e.remetente || TIPOS[e.tipo]} (desde ${dataHora(e.recebida_em).slice(0, 5)})`;
+    return `• ${u ? rotuloUnidade(u) : 'unidade ?'}${e.observacao ? ' (' + e.observacao + ')' : ''} · desde ${dataHora(e.recebida_em).slice(0, 5)}`;
   }).join('\n');
   const texto = `📦 *${atrasadas.length === 1 ? '1 encomenda parada' : `${atrasadas.length} encomendas paradas`} na portaria há mais de ${prazo} dias*\n\n${lista}\n\nOs moradores já foram avisados várias vezes. Vale falar com eles ou devolver ao remetente.`;
   for (const tel of await require('./duvidas').telefonesDaAdministracao()) await sv.enviar(tel, texto, null, 'síndico');
   for (const e of atrasadas) await db.from('encomendas').update({ sindico_avisado_em: new Date().toISOString() }).eq('id', e.id);
 }
 
-module.exports = { registrar, retirar, doMorador, cobrarRetiradas, avisarMoradores, TIPOS };
+module.exports = { registrar, retirar, doMorador, cobrarRetiradas, avisarMoradores };

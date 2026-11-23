@@ -30,8 +30,7 @@ router.post('/encomendas', equipe, a(async (req, res) => {
     if (arq) foto = await salvarFoto(arq.buffer, arq.mime, 'encomendas');
   }
   const r = await enc.registrar({
-    unidadeId: await sv.unidadeId(apto.bloco, apto.numero), remetente: req.body.remetente, tipo: req.body.tipo,
-    observacao: req.body.observacao, foto, por: `${req.session.usuario.nome}`,
+    unidadeId: await sv.unidadeId(apto.bloco, apto.numero), observacao: req.body.observacao, foto, por: `${req.session.usuario.nome}`,
   });
   const quem = `apto ${apto.bloco ? apto.bloco + ' ' : ''}${apto.numero}`;
   avisar(req, r.moradores
