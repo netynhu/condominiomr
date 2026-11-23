@@ -287,3 +287,24 @@ alter table duvidas enable row level security;
 alter table moradores add column if not exists fora_assunto_vezes int not null default 0;
 alter table moradores add column if not exists fora_assunto_em timestamptz;
 alter table moradores add column if not exists bloqueado_ate timestamptz;
+
+-- 011: encomendas (ver supabase/migracoes/011_encomendas.sql)
+create table if not exists encomendas (
+  id bigserial primary key,
+  condominio_id uuid not null references condominios(id) on delete cascade,
+  unidade_id uuid references unidades(id) on delete set null,
+  remetente text,
+  tipo text not null default 'pacote' check (tipo in ('pacote','envelope','comida','volumoso','outro')),
+  observacao text,
+  foto text,
+  status text not null default 'aguardando' check (status in ('aguardando','retirada','devolvida')),
+  recebida_por text,
+  recebida_em timestamptz not null default now(),
+  avisos int not null default 0,
+  ultimo_aviso_em timestamptz,
+  retirada_em timestamptz,
+  retirada_por text,
+  sindico_avisado_em timestamptz
+);
+create index if not exists encomendas_condominio_status_idx on encomendas (condominio_id, status, recebida_em);
+alter table encomendas enable row level security;

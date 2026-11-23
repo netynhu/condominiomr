@@ -1,0 +1,72 @@
+<%- include('partials/topo') %>
+<% const dias = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+   const tipos = { pacote: 'Pacote', envelope: 'Envelope', comida: 'Comida', volumoso: 'Volume grande', outro: 'Outro' };
+   const rot = { retirada: 'Retirada', devolvida: 'Devolvida' }; %>
+<div class="cabeca">
+  <div><h1>Encomendas</h1><p class="muted">A portaria registra o que chega. O morador recebe o aviso no WhatsApp, com a foto, e o assistente cobra a retirada até ele tocar em "Já retirei". Passou de <%= prazo %> dias, a administração é avisada.</p></div>
+</div>
+
+<% if (semTabela) { %>
+  <div class="alerta">Falta rodar a migração <code>011_encomendas.sql</code> no SQL do Supabase.</div>
+<% } %>
+
+<div class="grade-equipe encomendas">
+  <div class="card">
+    <h2>Aguardando retirada <% if (aguardando.length) { %><span class="tag alta"><%= aguardando.length %></span><% } %></h2>
+    <% if (!aguardando.length) { %><p class="muted">Nenhuma encomenda na portaria. Registre a próxima ao lado.</p><% } %>
+    <div class="lista">
+      <% for (const e of aguardando) { const d = dias(e.recebida_em); %>
+        <div class="item" style="align-items:flex-start">
+          <div style="display:flex;gap:12px;align-items:flex-start;min-width:0">
+            <% if (e.foto) { %><a href="/encomendas/<%= e.id %>/foto" target="_blank" rel="noopener"><img src="/encomendas/<%= e.id %>/foto" alt="Foto da encomenda" width="64" height="64" style="object-fit:cover;border-radius:10px;border:1px solid var(--line)"></a><% } %>
+            <div style="min-width:0">
+              <b><%= e.unidade ? u.rotuloUnidade(e.unidade) : 'Unidade ?' %></b> · <%= tipos[e.tipo] || 'Pacote' %><%= e.remetente ? ' · ' + e.remetente : '' %>
+              <div class="small muted"><%= u.dataHora(e.recebida_em) %> · <%= d === 0 ? 'chegou hoje' : 'há ' + d + ' dia' + (d > 1 ? 's' : '') %> · avisado <%= e.avisos %>x<%= e.observacao ? ' · ' + e.observacao : '' %></div>
+              <% if (d >= prazo) { %><span class="tag nova">passou do prazo</span><% } %>
+            </div>
+          </div>
+          <div class="acoes equipe-acoes">
+            <form method="post" action="/encomendas/<%= e.id %>/entregue" data-confirmar="Marcar como entregue ao morador? Os avisos param."><button class="btn peq" type="submit">Entregue</button></form>
+            <details class="menu-mais"><summary class="btn sec peq">Mais</summary>
+              <div class="acoes" style="margin-top:6px;flex-direction:column;align-items:stretch">
+                <form method="post" action="/encomendas/<%= e.id %>/avisar"><button class="btn sec peq" type="submit" style="width:100%">Avisar de novo</button></form>
+                <form method="post" action="/encomendas/<%= e.id %>/devolvida" data-confirmar="Marcar como devolvida ao remetente?"><button class="btn sec peq" type="submit" style="width:100%">Devolvida</button></form>
+              </div>
+            </details>
+          </div>
+        </div>
+      <% } %>
+    </div>
+
+    <% if (recentes.length) { %>
+    <details style="margin-top:8px"><summary>Últimas retiradas (<%= recentes.length %>)</summary>
+      <div class="lista" style="margin-top:8px">
+        <% for (const e of recentes) { %>
+          <div class="item"><div><b><%= e.unidade ? u.rotuloUnidade(e.unidade) : 'Unidade ?' %></b> · <%= e.remetente || tipos[e.tipo] %> <span class="tag <%= e.status === 'retirada' ? 'resolvido' : '' %>"><%= rot[e.status] %></span>
+            <div class="small muted">chegou <%= u.dataHora(e.recebida_em) %><%= e.retirada_em ? ' · ' + rot[e.status].toLowerCase() + ' ' + u.dataHora(e.retirada_em) + (e.retirada_por ? ' por ' + e.retirada_por : '') : '' %></div></div></div>
+        <% } %>
+      </div>
+    </details>
+    <% } %>
+  </div>
+
+  <form class="card campos" method="post" action="/encomendas" id="form-encomenda">
+    <h2>Registrar encomenda</h2>
+    <label>Apartamento<input name="apto" id="apto" required inputmode="text" autocomplete="off" placeholder="Ex.: 304"></label>
+    <label>De onde veio<input name="remetente" id="remetente" list="remetentes" autocomplete="off" placeholder="Mercado Livre, Correios..."></label>
+    <datalist id="remetentes"><option value="Mercado Livre"><option value="Correios"><option value="Shopee"><option value="Amazon"><option value="Shein"><option value="iFood"><option value="Magalu"><option value="Transportadora"></datalist>
+    <label>Tipo<select name="tipo" id="tipo"><% for (const [k, n] of Object.entries(tipos)) { %><option value="<%= k %>"><%= n %></option><% } %></select></label>
+    <label>Observação (opcional)<input name="observacao" id="observacao" maxlength="200" placeholder="Ex.: caixa grande, frágil"></label>
+    <div class="campos" style="gap:8px">
+      <span class="small" style="font-weight:600">Foto do pacote (recomendado)</span>
+      <label class="btn sec" style="align-self:flex-start;cursor:pointer"><input type="file" id="arquivo-foto" accept="image/*" capture="environment" hidden><span id="texto-foto">Tirar foto</span></label>
+      <img id="previa-foto" alt="Prévia da foto" hidden style="max-width:200px;border-radius:10px;border:1px solid var(--line)">
+      <input type="hidden" name="imagem" id="imagem">
+    </div>
+    <button class="btn" type="submit">Registrar e avisar o morador</button>
+    <p class="small muted">Todos os moradores cadastrados no apartamento recebem o aviso no WhatsApp.</p>
+  </form>
+</div>
+<script src="/static/foto.js?v=2"></script>
+<script>ligarFoto('arquivo-foto', 'previa-foto', 'texto-foto', (dados) => { document.getElementById('imagem').value = dados; });</script>
+<%- include('partials/rodape') %>

@@ -284,6 +284,7 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
   v.autocadastro = req.body.autocadastro === 'on' ? '1' : '0';
+  v.encomenda_prazo_dias = String(Math.min(30, Math.max(1, parseInt(req.body.encomenda_prazo_dias, 10) || 7)));
   v.fora_assunto_limite = String(Math.min(10, Math.max(0, parseInt(req.body.fora_assunto_limite, 10) || 0)));
   v.fora_assunto_horas = String(Math.min(168, Math.max(1, parseInt(req.body.fora_assunto_horas, 10) || 12)));
   v.autocadastro_reclamacao_conferido = req.body.autocadastro_reclamacao_conferido === 'on' ? '1' : '0';

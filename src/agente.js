@@ -96,6 +96,16 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: { aceita: { type: 'boolean' } }, required: ['aceita'] },
   },
   {
+    name: 'consultar_encomendas',
+    description: 'Lista as encomendas do apartamento do morador que estão na portaria esperando retirada. Use quando ele perguntar se chegou algo ou se tem encomenda.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'confirmar_retirada_encomenda',
+    description: 'Marca uma encomenda como retirada quando o morador disser que já pegou (ex.: "peguei", "já retirei"). Sem número, usa a única encomenda esperando; se houver mais de uma, devolve a lista para você perguntar qual.',
+    parameters: { type: 'object', properties: { numero: { type: 'number', description: 'Número da encomenda (opcional)' } } },
+  },
+  {
     name: 'fora_do_assunto',
     description: 'Chame quando a mensagem do morador é um pedido ou pergunta que NÃO tem nada a ver com o condomínio, o prédio, a convivência ou o atendimento (ex.: receita, futebol, política, piada, tarefa da escola, pedir para escrever texto ou código, conversa sem propósito). NÃO chame para cumprimentos, agradecimentos, despedidas, "ok", nem para assuntos do prédio. Devolve o que dizer.',
     parameters: { type: 'object', properties: { assunto: { type: 'string', description: 'Do que se trata, em poucas palavras' } }, required: ['assunto'] },
@@ -173,6 +183,22 @@ async function executar(nome, args, ctx) {
       ok(await db.from('moradores').update({ aceita_avisos: !!args.aceita }).eq('id', morador.id));
       return { ok: true };
     }
+    case 'consultar_encomendas': {
+      const l = await require('./encomendas').doMorador(morador);
+      return l.length ? l.map((e) => ({ numero: e.id, de: e.remetente || undefined, tipo: e.tipo, desde: dataHora(e.recebida_em), observacao: e.observacao || undefined })) : { nenhuma: true, observacao: 'Não há encomenda aguardando retirada no apartamento dele.' };
+    }
+    case 'confirmar_retirada_encomenda': {
+      const enc = require('./encomendas');
+      let id = Number(args.numero) || 0;
+      if (!id) {
+        const l = await enc.doMorador(morador);
+        if (!l.length) return { ok: false, erro: 'Não há encomenda aguardando retirada no apartamento dele.' };
+        if (l.length > 1) return { ok: false, erro: 'Há mais de uma encomenda. Pergunte qual ele retirou.', encomendas: l.map((e) => ({ numero: e.id, de: e.remetente || e.tipo, desde: dataHora(e.recebida_em) })) };
+        id = l[0].id;
+      }
+      const r = await enc.retirar(id, { morador });
+      return { ok: r.ok, resultado: r.msg };
+    }
     case 'fora_do_assunto': {
       const r = await registrarForaDoAssunto(morador, args.assunto);
       if (r.bloqueado) ctx.bloqueadoAte = r.ate;
@@ -225,6 +251,9 @@ QUANDO VOCÊ NÃO SABE A RESPOSTA (muito importante)
 - Se a resposta não está escrita nas fontes acima, você NÃO sabe. Não deduza e não suponha. Isso vale também para "existe X no prédio?" (academia, bicicletário, salão, serviço): se não estiver escrito, não afirme que existe nem que não existe. Não diga coisas como "isso é feito pela administração", "procure a portaria" ou "é só pedir ao zelador" se isso não estiver escrito.
 - Seja sincero: diga que ainda não tem essa informação e que vai perguntar à administração. Chame perguntar_administracao com a pergunta na mesma hora (não pergunte se pode perguntar). Depois diga o número da dúvida e que você avisa aqui mesmo assim que a administração responder.
 - Nunca diga que encaminhou, avisou alguém ou gerou protocolo sem ter chamado a ferramenta e recebido o número de volta.
+
+ENCOMENDAS
+- A portaria registra as encomendas e você avisa o morador. Se ele perguntar se chegou algo, use consultar_encomendas. Se disser que já pegou ("peguei", "já retirei"), use confirmar_retirada_encomenda para parar os avisos.
 
 ASSUNTOS FORA DO CONDOMÍNIO
 - Você só atende assuntos do condomínio. Se a pessoa pedir algo que não tem nada a ver com o prédio (receita, futebol, política, piada, tarefa da escola, escrever textos, conversa sem propósito), não responda ao assunto: chame fora_do_assunto e siga a instrução que ela devolver.
@@ -567,6 +596,13 @@ async function atenderMorador(tel, b, texto) {
   {
     const morador = await sv.acharMorador(tel);
     if (!morador || !morador.ativo) return;
+    // Botão "Já retirei" da encomenda: resolve direto, sem IA
+    const retirei = /\[\[enc_retirei:(\d+)\]\]/.exec(texto);
+    if (retirei) {
+      const r = await require('./encomendas').retirar(Number(retirei[1]), { morador });
+      await sv.enviar(morador.telefone, r.msg, morador.id);
+      return;
+    }
     // Botão antigo do cadastro clicado por quem já está cadastrado: não interessa ao assistente
     if (/^\s*(\[\[cad_[a-z_]+\]\]\s*)+$/.test(texto)) return;
 
@@ -614,6 +650,7 @@ async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, 
     if (BOTOES[botao]) return BOTOES[botao];
     if (/^cad_[a-z0-9_-]+$/.test(botao)) return `[[${botao}]]`; // botões do autocadastro
     if (/^cond_[0-9a-f-]{36}$/.test(botao)) return `[[${botao}]]`; // escolha do condomínio
+    if (/^enc_retirei:\d+$/.test(botao)) return `[[${botao}]]`; // "Já retirei" da encomenda
     const voltou = /^reclamacao_voltou:(\d+)$/.exec(botao);
     if (voltou) return `O problema da reclamação nº ${voltou[1]} voltou a acontecer.`;
     if (botao === 'reclamacao_ok') return 'Está resolvido, obrigado!';

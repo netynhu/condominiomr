@@ -65,6 +65,14 @@
   <label class="check"><input type="checkbox" name="grupo_chamar_privado" id="grupo_chamar_privado" <%= c.grupo_chamar_privado === '1' ? 'checked' : '' %>> Quando um morador relatar um problema no grupo, chamar ele no privado para abrir o chamado</label>
   <p class="small muted">O assistente nunca responde no grupo. Com esta opção ligada, ele manda no máximo uma mensagem privada por morador a cada 24 horas.</p>
 
+  <h2 style="margin-top:8px">Encomendas</h2>
+  <label>Avisar a administração quando uma encomenda ficar parada
+    <select name="encomenda_prazo_dias" id="encomenda_prazo_dias">
+      <% for (const n of [3, 5, 7, 10, 15, 30]) { %><option value="<%= n %>" <%= String(c.encomenda_prazo_dias || 7) === String(n) ? 'selected' : '' %>>há mais de <%= n %> dias na portaria</option><% } %>
+    </select>
+  </label>
+  <p class="small muted">O morador é avisado quando a encomenda chega e lembrado 1 dia depois, 3 dias depois e a cada 2 dias, até tocar em "Já retirei".</p>
+
   <h2 style="margin-top:8px">Assuntos fora do condomínio</h2>
   <p class="small muted">Quando alguém insiste em perguntar coisas que não têm a ver com o prédio (receitas, futebol, política, tarefas da escola...), o assistente avisa. Se continuar, ele pausa o atendimento daquele número. Mensagens de urgência (vazamento, incêndio, gás, alguém preso no elevador) sempre são atendidas.</p>
   <div class="linha-campos">

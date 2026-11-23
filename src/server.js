@@ -154,6 +154,7 @@ app.use(async (req, res, next) => {
       res.locals.contadores = { chamados, reclamacoes };
       // Dúvidas sem resposta (tabela da migração 008; sem ela, fica sem número)
       if (u.perfil === 'admin') res.locals.contadores.duvidas = await contar('duvidas', (q) => q.eq('status', 'aberta')).catch(() => 0);
+      if (u.perfil === 'admin' || u.perfil === 'portaria') res.locals.contadores.encomendas = await contar('encomendas', (q) => q.eq('status', 'aguardando')).catch(() => 0);
     } catch { /* menu sem números se o banco falhar */ }
   }
   next();
@@ -165,6 +166,7 @@ app.use(require('./rotas/zelador'));
 app.use(require('./rotas/whatsapp'));
 app.use(require('./rotas/cadastro'));
 app.use(require('./rotas/operacao'));
+app.use(require('./rotas/encomendas'));
 app.use(require('./rotas/inteligencia'));
 
 app.use((req, res) => res.status(404).render('erro', { titulo: 'Página não encontrada', mensagem: 'Confira o endereço.' }));

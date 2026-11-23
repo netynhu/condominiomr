@@ -27,6 +27,6 @@ function iniciarSessao(req, u) {
   req.session.condominios = null;
 }
 
-const PAGINA_INICIAL = { admin: '/', sindico: '/', zelador: '/z', portaria: '/reclamacoes', conselho: '/relatorio' };
+const PAGINA_INICIAL = { admin: '/', sindico: '/', zelador: '/z', portaria: '/encomendas', conselho: '/relatorio' };
 
 module.exports = { a, exigir, exigirDono, avisar, iniciarSessao, PAGINA_INICIAL };
