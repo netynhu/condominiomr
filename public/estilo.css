@@ -219,3 +219,6 @@ hr{border:0;border-top:1px solid var(--line);width:100%;margin:0}
 @media (max-width:1180px){.grade-equipe.encomendas>form{order:-1}}
 .menu-mais summary{list-style:none;cursor:pointer}
 .menu-mais summary::-webkit-details-marker{display:none}
+
+/* Elemento escondido continua escondido mesmo com classe de botão */
+[hidden]{display:none!important}

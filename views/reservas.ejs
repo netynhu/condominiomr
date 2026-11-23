@@ -1,0 +1,58 @@
+<%- include('partials/topo') %>
+<% const st = { agendada: ['Agendada', 'aberto'], em_uso: ['Em uso', 'alta'], concluida: ['Concluída', 'resolvido'], cancelada: ['Cancelada', ''] };
+   const fmt = (iso) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+   const hora = (iso) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+   const linha = (x) => `${x.morador ? x.morador.nome + ' · ' + u.rotuloUnidade(x.morador.unidade) : 'morador removido'}`; %>
+<div class="cabeca">
+  <div><h1>Reservas</h1><p class="muted">Cadastre a reserva feita com a administração. O morador recebe a confirmação na hora, o link do check-in no início e o do check-out no fim. Se algo piorar, você é avisado com as fotos de antes e depois.</p></div>
+  <a class="btn sec" href="/espacos">Espaços e checklists</a>
+</div>
+
+<% if (semTabela) { %><div class="alerta">Falta rodar a migração <code>012_espacos_reservas.sql</code> no SQL do Supabase.</div><% } %>
+
+<div class="grade-equipe encomendas">
+  <div class="card">
+    <h2>Próximas e em andamento</h2>
+    <% if (!proximas.length) { %><p class="muted">Nenhuma reserva marcada.</p><% } %>
+    <div class="lista">
+      <% for (const x of proximas) { %>
+        <a class="item" href="/reservas/<%= x.id %>" style="color:inherit;text-decoration:none">
+          <div><b><%= x.espaco?.nome %></b> <span class="tag <%= st[x.status][1] %>"><%= st[x.status][0] %></span>
+            <div class="small muted"><%= fmt(x.inicio) %> até <%= hora(x.fim) %> · <%= linha(x) %></div>
+            <div class="small"><%= x.entrada_em ? '✅ check-in feito' : '☐ check-in' %> · <%= x.saida_em ? '✅ check-out feito' : '☐ check-out' %></div>
+          </div>
+        </a>
+      <% } %>
+    </div>
+    <% if (passadas.length) { %>
+    <details style="margin-top:8px"><summary>Últimos 30 dias (<%= passadas.length %>)</summary>
+      <div class="lista" style="margin-top:8px">
+        <% for (const x of passadas) { %>
+          <a class="item" href="/reservas/<%= x.id %>" style="color:inherit;text-decoration:none">
+            <div><b><%= x.espaco?.nome %></b> <span class="tag <%= st[x.status][1] %>"><%= st[x.status][0] %></span><% if (x.problemas) { %> <span class="tag nova">algo piorou</span><% } else if (x.status !== 'cancelada' && !x.saida_em) { %> <span class="tag alta">sem check-out</span><% } %>
+              <div class="small muted"><%= fmt(x.inicio) %> · <%= linha(x) %></div></div>
+          </a>
+        <% } %>
+      </div>
+    </details>
+    <% } %>
+  </div>
+
+  <form class="card campos" method="post" action="/reservas">
+    <h2>Nova reserva</h2>
+    <% if (!espacos.length) { %>
+      <p class="muted">Primeiro cadastre os espaços e os checklists em <a href="/espacos">Espaços e checklists</a>.</p>
+    <% } else { %>
+      <label>Espaço<select name="espaco_id" required><% for (const e of espacos) { %><option value="<%= e.id %>"><%= e.nome %></option><% } %></select></label>
+      <label>Morador<select name="morador_id" required><option value="">Escolha</option><% for (const m of moradores) { %><option value="<%= m.id %>"><%= u.rotuloUnidade(m.unidade) %> · <%= m.nome %></option><% } %></select></label>
+      <label>Data<input type="date" name="data" required></label>
+      <div class="linha-campos">
+        <label>Início<input type="time" name="hora_inicio" required value="18:00"></label>
+        <label>Fim<input type="time" name="hora_fim" required value="23:00"></label>
+      </div>
+      <label>Observação (opcional)<input name="observacao" maxlength="200" placeholder="Ex.: chave com o porteiro"></label>
+      <button class="btn" type="submit">Cadastrar e avisar o morador</button>
+    <% } %>
+  </form>
+</div>
+<%- include('partials/rodape') %>

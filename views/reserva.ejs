@@ -1,0 +1,42 @@
+<%- include('partials/topo') %>
+<% const st = { agendada: 'Agendada', em_uso: 'Em uso', concluida: 'Concluída', cancelada: 'Cancelada' };
+   const itens = r.espaco.itens || []; %>
+<div class="cabeca">
+  <div><h1><%= r.espaco.nome %></h1><p class="muted"><%= u.dataExtenso(r.inicio) %> até <%= hora(r.fim) %> · <%= r.morador ? r.morador.nome : 'morador removido' %> · <%= st[r.status] %></p></div>
+  <a class="btn sec" href="/reservas">Voltar</a>
+</div>
+
+<% if (r.problemas) { %><div class="flash erro" style="margin-bottom:16px"><b>Algo piorou durante a reserva:</b><br><%= r.problemas %></div><% } %>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="tabela" style="box-shadow:none">
+    <table>
+      <thead><tr><th>Item</th><th>Check-in <%= r.entrada_em ? '· ' + u.dataHora(r.entrada_em) : '' %></th><th>Check-out <%= r.saida_em ? '· ' + u.dataHora(r.saida_em) : '' %></th></tr></thead>
+      <tbody>
+        <% itens.forEach((it, i) => { const e = r.entrada?.[i]; const s = r.saida?.[i]; const piorou = s && !s.ok && (!e || e.ok); %>
+          <tr style="<%= piorou ? 'background:var(--danger-soft)' : '' %>">
+            <td><b><%= it.texto %></b><%= it.foto ? ' 📷' : '' %></td>
+            <% for (const [x, et] of [[e, 'entrada'], [s, 'saida']]) { %>
+              <td>
+                <% if (!x) { %><span class="small muted">não feito</span><% } else { %>
+                  <span class="tag <%= x.ok ? 'resolvido' : 'nova' %>"><%= x.ok ? 'OK' : 'Problema' %></span>
+                  <% if (x.obs) { %><div class="small"><%= x.obs %></div><% } %>
+                  <% if (x.foto) { %><a href="/reservas/<%= r.id %>/foto/<%= et %>/<%= i %>" target="_blank" rel="noopener"><img src="/reservas/<%= r.id %>/foto/<%= et %>/<%= i %>" alt="Foto: <%= it.texto %>" width="96" height="72" style="object-fit:cover;border-radius:8px;margin-top:6px;display:block"></a><% } %>
+                <% } %>
+              </td>
+            <% } %>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<% if (['agendada', 'em_uso'].includes(r.status)) { %>
+<div class="acoes">
+  <% if (!r.entrada_em) { %><form method="post" action="/reservas/<%= r.id %>/link/entrada"><button class="btn sec" type="submit">Reenviar link do check-in</button></form><% } %>
+  <% if (!r.saida_em) { %><form method="post" action="/reservas/<%= r.id %>/link/saida"><button class="btn sec" type="submit">Enviar link do check-out</button></form><% } %>
+  <form method="post" action="/reservas/<%= r.id %>/cancelar" data-confirmar="Cancelar esta reserva? O morador é avisado no WhatsApp."><button class="btn perigo" type="submit">Cancelar reserva</button></form>
+</div>
+<% } %>
+<%- include('partials/rodape') %>

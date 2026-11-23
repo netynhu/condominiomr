@@ -128,6 +128,7 @@ function iniciar() {
   setInterval(seguro('manutencao', porCondominio('manutencao', verificarManutencoes)), 60 * 60000);
   setInterval(seguro('duvidas', porCondominio('duvidas', lembrarDuvidas)), 30 * 60000);
   setInterval(seguro('encomendas', porCondominio('encomendas', () => require('./encomendas').cobrarRetiradas())), 30 * 60000);
+  setInterval(seguro('reservas', porCondominio('reservas', () => require('./reservas').acompanhar())), 5 * 60000);
   setTimeout(seguro('manutencao', porCondominio('manutencao', verificarManutencoes)), 15000);
   console.log('[rotinas] fila de envio, lembretes, eventos e manutenção ativos');
 }

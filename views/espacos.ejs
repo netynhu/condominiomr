@@ -1,0 +1,75 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Espaços e checklists</h1><p class="muted">Monte o checklist de cada área reservável. O morador confere esses itens no check-in (início da reserva) e no check-out (fim). Marque "foto" nos itens que precisam de foto de prova.</p></div>
+</div>
+
+<% if (semTabela) { %><div class="alerta">Falta rodar a migração <code>012_espacos_reservas.sql</code> no SQL do Supabase.</div><% } %>
+
+<div class="grade-equipe">
+  <div class="card">
+    <h2>Espaços</h2>
+    <% if (!espacos.length) { %><p class="muted">Nenhum espaço ainda. Crie o primeiro ao lado (ex.: Espaço gourmet).</p><% } %>
+    <div class="lista">
+      <% for (const e of espacos) { %>
+        <div class="item">
+          <div><b><%= e.nome %></b>
+            <div class="small muted"><%= e.itens.length %> itens · <%= e.itens.filter((i) => i.foto).length %> com foto</div>
+            <div class="small" style="margin-top:4px"><%= e.itens.map((i) => (i.foto ? '📷 ' : '☐ ') + i.texto).join('  ·  ') %></div>
+          </div>
+          <div class="acoes equipe-acoes">
+            <button class="btn sec peq" type="button" data-editar='<%= JSON.stringify({ id: e.id, nome: e.nome, itens: e.itens }) %>'>Editar</button>
+            <form method="post" action="/espacos/<%= e.id %>/excluir" data-confirmar="Remover o <%= e.nome %>? As reservas antigas continuam no histórico."><button class="btn sec peq" type="submit">Remover</button></form>
+          </div>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <form class="card campos" method="post" action="/espacos" id="form-espaco">
+    <h2 id="titulo-form">Novo espaço</h2>
+    <input type="hidden" name="id" id="espaco-id">
+    <input type="hidden" name="itens" id="itens-json">
+    <label>Nome do espaço<input name="nome" id="espaco-nome" required placeholder="Ex.: Espaço gourmet"></label>
+    <div class="campos" style="gap:8px">
+      <span class="small" style="font-weight:600">Itens do checklist</span>
+      <div id="itens" class="campos" style="gap:8px"></div>
+      <button class="btn sec peq" type="button" id="mais-item" style="align-self:flex-start">+ Item</button>
+    </div>
+    <div class="acoes"><button class="btn" type="submit">Salvar checklist</button><button class="btn sec" type="button" id="limpar" hidden>Cancelar edição</button></div>
+    <p class="small muted">Exemplos: Churrasqueira limpa · 20 cadeiras · Geladeira vazia e desligada · Banheiro limpo · Foto geral do salão.</p>
+  </form>
+</div>
+<script>
+(function () {
+  const box = document.getElementById('itens');
+  function linha(texto = '', foto = false) {
+    const d = document.createElement('div');
+    d.className = 'acoes'; d.style.flexWrap = 'nowrap';
+    d.innerHTML = '<input class="item-texto" placeholder="Ex.: Churrasqueira limpa" style="flex:1;min-width:0"><label class="check small" style="white-space:nowrap"><input type="checkbox" class="item-foto"> foto</label><button class="icone-btn" type="button" aria-label="Remover item">✕</button>';
+    d.querySelector('.item-texto').value = texto;
+    d.querySelector('.item-foto').checked = foto;
+    d.querySelector('button').onclick = () => d.remove();
+    box.appendChild(d);
+  }
+  function limpar() {
+    box.innerHTML = ''; for (let i = 0; i < 3; i++) linha();
+    document.getElementById('espaco-id').value = ''; document.getElementById('espaco-nome').value = '';
+    document.getElementById('titulo-form').textContent = 'Novo espaço'; document.getElementById('limpar').hidden = true;
+  }
+  document.getElementById('mais-item').onclick = () => linha();
+  document.getElementById('limpar').onclick = limpar;
+  document.querySelectorAll('[data-editar]').forEach((b) => b.onclick = () => {
+    const e = JSON.parse(b.dataset.editar);
+    box.innerHTML = ''; e.itens.forEach((i) => linha(i.texto, i.foto));
+    document.getElementById('espaco-id').value = e.id; document.getElementById('espaco-nome').value = e.nome;
+    document.getElementById('titulo-form').textContent = 'Editar ' + e.nome; document.getElementById('limpar').hidden = false;
+    document.getElementById('form-espaco').scrollIntoView({ behavior: 'smooth' });
+  });
+  document.getElementById('form-espaco').addEventListener('submit', () => {
+    const itens = [...box.children].map((d) => ({ texto: d.querySelector('.item-texto').value.trim(), foto: d.querySelector('.item-foto').checked })).filter((i) => i.texto);
+    document.getElementById('itens-json').value = JSON.stringify(itens);
+  });
+  limpar();
+})();
+</script>
+<%- include('partials/rodape') %>

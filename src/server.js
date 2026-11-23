@@ -167,6 +167,7 @@ app.use(require('./rotas/whatsapp'));
 app.use(require('./rotas/cadastro'));
 app.use(require('./rotas/operacao'));
 app.use(require('./rotas/encomendas'));
+app.use(require('./rotas/reservas'));
 app.use(require('./rotas/inteligencia'));
 
 app.use((req, res) => res.status(404).render('erro', { titulo: 'Página não encontrada', mensagem: 'Confira o endereço.' }));

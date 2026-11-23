@@ -96,6 +96,11 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: { aceita: { type: 'boolean' } }, required: ['aceita'] },
   },
   {
+    name: 'consultar_minhas_reservas',
+    description: 'Lista as reservas de espaços (salão, churrasqueira...) do morador, das próximas e de hoje. As reservas são feitas com a administração; você não cria reservas.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'consultar_encomendas',
     description: 'Lista as encomendas do apartamento do morador que estão na portaria esperando retirada. Use quando ele perguntar se chegou algo ou se tem encomenda.',
     parameters: { type: 'object', properties: {} },
@@ -183,6 +188,14 @@ async function executar(nome, args, ctx) {
       ok(await db.from('moradores').update({ aceita_avisos: !!args.aceita }).eq('id', morador.id));
       return { ok: true };
     }
+    case 'consultar_minhas_reservas': {
+      const r = await db.from('reservas').select('inicio, fim, status, entrada_em, saida_em, token, espaco:espacos(nome)').eq('morador_id', morador.id)
+        .in('status', ['agendada', 'em_uso']).gte('fim', new Date().toISOString()).order('inicio').limit(5);
+      if (r.error) return { nenhuma: true };
+      return r.data.length ? r.data.map((x) => ({ espaco: x.espaco?.nome, quando: dataExtenso(x.inicio), ate: dataExtenso(x.fim), checkin_feito: Boolean(x.entrada_em),
+        link_checkin: !x.entrada_em && new Date(x.inicio) <= new Date() ? `${env.APP_URL}/r/${x.token}/entrada` : undefined,
+        link_checkout: !x.saida_em && new Date(x.fim) <= new Date() ? `${env.APP_URL}/r/${x.token}/saida` : undefined })) : { nenhuma: true, observacao: 'Ele não tem reserva marcada. Reservas são feitas com a administração.' };
+    }
     case 'consultar_encomendas': {
       const l = await require('./encomendas').doMorador(morador);
       return l.length ? l.map((e) => ({ numero: e.id, desde: dataHora(e.recebida_em), observacao: e.observacao || undefined })) : { nenhuma: true, observacao: 'Não há encomenda aguardando retirada no apartamento dele.' };
@@ -251,6 +264,9 @@ QUANDO VOCÊ NÃO SABE A RESPOSTA (muito importante)
 - Se a resposta não está escrita nas fontes acima, você NÃO sabe. Não deduza e não suponha. Isso vale também para "existe X no prédio?" (academia, bicicletário, salão, serviço): se não estiver escrito, não afirme que existe nem que não existe. Não diga coisas como "isso é feito pela administração", "procure a portaria" ou "é só pedir ao zelador" se isso não estiver escrito.
 - Seja sincero: diga que ainda não tem essa informação e que vai perguntar à administração. Chame perguntar_administracao com a pergunta na mesma hora (não pergunte se pode perguntar). Depois diga o número da dúvida e que você avisa aqui mesmo assim que a administração responder.
 - Nunca diga que encaminhou, avisou alguém ou gerou protocolo sem ter chamado a ferramenta e recebido o número de volta.
+
+RESERVAS DE ESPAÇOS
+- As reservas são feitas com a administração (siga o que o regulamento diz). Você não cria reservas. Se o morador perguntar da reserva dele ou pedir o link do check-in/check-out, use consultar_minhas_reservas.
 
 ENCOMENDAS
 - A portaria registra as encomendas e você avisa o morador. Se ele perguntar se chegou algo, use consultar_encomendas. Se disser que já pegou ("peguei", "já retirei"), use confirmar_retirada_encomenda para parar os avisos.

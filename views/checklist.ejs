@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0C1B1F">
+<meta name="robots" content="noindex">
+<title><%= titulo %></title>
+<link rel="icon" href="/static/icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/static/estilo.css?v=5">
+<style>
+  body{background:var(--bg)}
+  .ck{max-width:560px;margin:0 auto;padding:16px 16px calc(32px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+  .ck-topo{background:var(--side);color:#fff;border-radius:16px;padding:18px}
+  .ck-topo small{color:var(--side-muted);display:block}
+  .ck-item{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .ck-item b{font-size:1rem}
+  .ck-opcoes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .ck-opcoes label{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line-2);border-radius:10px;padding:12px;font-weight:600;cursor:pointer;min-height:48px}
+  .ck-opcoes input{position:absolute;opacity:0;pointer-events:none}
+  .ck-opcoes label:has(input:checked).bom{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .ck-opcoes label:has(input:checked).ruim{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+  .ck-item img{max-width:100%;border-radius:10px}
+  .ck-erro{border-color:var(--danger)!important;box-shadow:0 0 0 3px rgba(217,45,32,.12)}
+</style>
+</head>
+<body>
+<main class="ck">
+  <div class="ck-topo">
+    <small><%= cfg.nome_predio %></small>
+    <h1 style="color:#fff;font-size:1.35rem;margin:2px 0"><%= etapa === 'entrada' ? 'Check-in' : 'Check-out' %> · <%= r.espaco.nome %></h1>
+    <small><%= u.dataExtenso(r.inicio) %> até <%= hora(r.fim) %><%= r.morador ? ' · ' + r.morador.nome : '' %></small>
+  </div>
+
+  <% if (vencido) { %>
+    <div class="card"><h2>Link expirado</h2><p class="muted">Esta reserva já terminou ou foi cancelada. Se precisar, fale com a administração.</p></div>
+  <% } else if (feito) { %>
+    <div class="card"><h2>✅ <%= etapa === 'entrada' ? 'Check-in' : 'Check-out' %> já feito</h2><p class="muted">Obrigado! Está registrado.<%= etapa === 'entrada' ? ' No fim da reserva, você recebe o link do check-out no WhatsApp.' : '' %></p></div>
+  <% } else { %>
+    <p class="muted" style="margin:0"><%= etapa === 'entrada' ? 'Confira como você está recebendo o espaço. Se algo já estiver com problema, marque: fica registrado que não foi você.' : 'Confira como você está deixando o espaço. Os mesmos itens do check-in.' %></p>
+    <form id="ck" class="campos" style="gap:12px">
+      <% (r.espaco.itens || []).forEach((it, i) => { %>
+        <div class="ck-item" data-i="<%= i %>" data-foto="<%= it.foto ? 1 : 0 %>">
+          <b><%= i + 1 %>. <%= it.texto %></b>
+          <div class="ck-opcoes">
+            <label class="bom"><input type="radio" name="ok-<%= i %>" value="1" checked> ✓ OK</label>
+            <label class="ruim"><input type="radio" name="ok-<%= i %>" value="0"> ✕ Problema</label>
+          </div>
+          <input class="obs" placeholder="Observação (opcional)" maxlength="300">
+          <% if (it.foto) { %>
+            <label class="btn sec" style="align-self:flex-start;cursor:pointer"><input type="file" id="foto-<%= i %>" accept="image/*" capture="environment" hidden><span id="foto-texto-<%= i %>">📷 Tirar foto (obrigatória)</span></label>
+            <img id="foto-previa-<%= i %>" alt="Foto: <%= it.texto %>" hidden>
+          <% } %>
+        </div>
+      <% }) %>
+      <button class="btn" type="submit" id="enviar" style="min-height:52px;font-size:1rem">Enviar <%= etapa === 'entrada' ? 'check-in' : 'check-out' %></button>
+      <p class="small muted" id="status" role="status"></p>
+    </form>
+  <% } %>
+</main>
+<% if (!vencido && !feito) { %>
+<script src="/static/foto.js?v=2"></script>
+<script>
+(function () {
+  const fotos = {};
+  document.querySelectorAll('.ck-item[data-foto="1"]').forEach((el) => {
+    const i = el.dataset.i;
+    ligarFoto('foto-' + i, 'foto-previa-' + i, 'foto-texto-' + i, (d) => { fotos[i] = d; el.classList.remove('ck-erro'); });
+  });
+  const st = document.getElementById('status');
+  document.getElementById('ck').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const itens = [...document.querySelectorAll('.ck-item')];
+    const faltando = itens.filter((el) => el.dataset.foto === '1' && !fotos[el.dataset.i]);
+    itens.forEach((el) => el.classList.toggle('ck-erro', faltando.includes(el)));
+    if (faltando.length) { st.textContent = 'Falta tirar a foto dos itens destacados.'; faltando[0].scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    const respostas = itens.map((el) => ({
+      ok: el.querySelector('input[type=radio]:checked').value === '1',
+      obs: el.querySelector('.obs').value,
+      foto: fotos[el.dataset.i] || null,
+    }));
+    const btn = document.getElementById('enviar');
+    btn.disabled = true; st.textContent = 'Enviando...';
+    try {
+      const r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ respostas }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'Não foi possível enviar.');
+      document.querySelector('main').innerHTML = '<div class="card"><h2>✅ Enviado!</h2><p class="muted">Obrigado. Está registrado.</p></div>';
+    } catch (e) { st.textContent = e.message + ' Tente de novo.'; btn.disabled = false; }
+  });
+})();
+</script>
+<% } %>
+</body>
+</html>
