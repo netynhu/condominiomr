@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
-const { db, ok, contar, setConfig } = require('../db');
-const { a, avisar, PAGINA_INICIAL } = require('./comum');
+const { dbGlobal: db, ok, contar, setConfig } = require('../db');
+const { noCondominio } = require('../contexto');
+const { a, avisar, iniciarSessao, PAGINA_INICIAL } = require('./comum');
 
 // Tentativas de login por IP (proteção simples contra força bruta)
 const tentativas = new Map();
@@ -26,7 +27,7 @@ router.post('/login', a(async (req, res) => {
     return res.render('login', { titulo: 'Entrar', erro: 'E-mail ou senha incorretos.', email });
   }
   tentativas.delete(ip);
-  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil === 'sindico' ? 'admin' : u.perfil, cargo: u.perfil };
+  iniciarSessao(req, u);
   res.redirect(PAGINA_INICIAL[u.perfil]);
 }));
 
@@ -44,11 +45,14 @@ router.post('/configurar', a(async (req, res) => {
   if (!nome || !email || !senha || senha.length < 8 || !nome_predio) {
     return res.render('configurar', { titulo: 'Primeiro acesso', erro: 'Preencha tudo. A senha precisa de pelo menos 8 caracteres.' });
   }
+  // Primeiro condomínio e o responsável pela plataforma ("dono")
+  const cond = ok(await db.from('condominios').insert({ nome: nome_predio.trim() }).select('id').single());
   const u = ok(await db.from('usuarios').insert({
-    nome: nome.trim(), email: email.trim().toLowerCase(), senha_hash: await bcrypt.hash(senha, 10), perfil: 'admin',
+    nome: nome.trim(), email: email.trim().toLowerCase(), senha_hash: await bcrypt.hash(senha, 10), perfil: 'admin', dono: true, condominio_atual: cond.id,
   }).select().single());
-  await setConfig({ nome_predio: nome_predio.trim(), nome_assistente: `Assistente do ${nome_predio.trim()}` });
-  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil === 'sindico' ? 'admin' : u.perfil, cargo: u.perfil };
+  ok(await db.from('usuario_condominios').insert({ usuario_id: u.id, condominio_id: cond.id }));
+  await noCondominio(cond.id, () => setConfig({ nome_predio: nome_predio.trim(), nome_assistente: `Assistente do ${nome_predio.trim()}` }));
+  iniciarSessao(req, u);
   avisar(req, 'Tudo pronto. Agora conecte o WhatsApp do prédio.');
   res.redirect('/whatsapp');
 }));

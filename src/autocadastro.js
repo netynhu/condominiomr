@@ -1,7 +1,8 @@
 // Autocadastro pelo grupo: quem está no grupo dos moradores manda "Quero me cadastrar" no privado
 // e o assistente pede os dados, um de cada vez. Quem não está no grupo é orientado a procurar a administração.
 // A administração confere depois no painel (Moradores > Cadastros pelo grupo).
-const { db, ok, getConfig } = require('./db');
+const { db, dbGlobal, ok, getConfig, listarCondominios } = require('./db');
+const { noCondominio } = require('./contexto');
 const uazapi = require('./uazapi');
 const sv = require('./servicos');
 const { variantesTelefone, primeiroNome } = require('./util');
@@ -55,7 +56,7 @@ const ROTULO_TIPO = { proprietario: 'Proprietário', inquilino: 'Inquilino', mor
 
 // ---------- Estado da conversa (fica em contatos_pendentes.dados) ----------
 async function lerPendente(tel) {
-  const r = await db.from('contatos_pendentes').select('*').in('telefone', variantesTelefone(tel)).limit(1);
+  const r = await dbGlobal.from('contatos_pendentes').select('*').in('telefone', variantesTelefone(tel)).limit(1);
   if (r.error) throw new Error(r.error.message);
   return r.data[0] || null;
 }
@@ -98,14 +99,49 @@ async function mostrarResumo(tel, d) {
   return botoes(tel, texto, ['✅ Está certo|cad_confirmar', '✏️ Corrigir|cad_corrigir'], 'Responda "sim" para confirmar ou "corrigir" para começar de novo.');
 }
 
-// ---------- Fluxo ----------
-// Retorna true se tratou a mensagem (pedido de cadastro ou conversa de cadastro em andamento)
+// ---------- Entrada: de qual condomínio é o cadastro ----------
+// Vários condomínios podem usar o mesmo número. O pedido de cadastro vale para o condomínio
+// em cujo grupo a pessoa está. Retorna true se tratou a mensagem.
 async function atender(tel, nomeWhatsapp, texto) {
-  const cfg = await getConfig();
-  if (cfg.autocadastro === '0') return false;
   const pendente = await lerPendente(tel);
+  // Conversa de cadastro já em andamento num condomínio
+  if (pendente?.condominio_id && pendente.dados?.etapa) {
+    return noCondominio(pendente.condominio_id, () => fluxo(tel, nomeWhatsapp, texto, pendente));
+  }
+  const escolha = (/\[\[cad_cond_([0-9a-f-]{36})\]\]/.exec(texto) || [])[1];
+  if (!escolha && !PEDIU_CADASTRO.test(texto)) return false;
+  const anterior = pendente?.dados || {};
+  if (!escolha && anterior.fora_do_grupo && Date.now() - new Date(anterior.fora_do_grupo).getTime() < DIA) return true; // não repete a orientação
+
+  // Condomínios com cadastro pelo grupo ligado e cujo grupo tem este número
+  const candidatos = [];
+  for (const c of await listarCondominios()) {
+    if (escolha && c.id !== escolha) continue;
+    try {
+      const cfg = await noCondominio(c.id, getConfig);
+      if (cfg.autocadastro === '0' || !cfg.grupo_jid) continue;
+      if (await estaNoGrupo(tel, cfg)) candidatos.push({ id: c.id, nome: cfg.nome_predio });
+    } catch (e) { console.error('[autocadastro] grupo', c.nome, e.message); }
+  }
+
+  if (!candidatos.length) {
+    await salvarPendente(tel, nomeWhatsapp, texto, { fora_do_grupo: new Date().toISOString() }, pendente);
+    await sv.enviar(tel, 'Olá! Não encontrei este número no grupo dos moradores de nenhum condomínio atendido por aqui, então não consigo fazer o seu cadastro.\n\nPor favor, procure a administração do seu condomínio para fazer o cadastro.');
+    return true;
+  }
+  if (candidatos.length > 1) {
+    await sv.enviarBotoes(tel, 'Olá! Encontrei este número no grupo de mais de um condomínio. Em qual deles você quer se cadastrar?',
+      candidatos.slice(0, 3).map((c) => `🏢 ${c.nome}|cad_cond_${c.id}`), { planoB: `Responda com o nome do prédio: ${candidatos.map((c) => c.nome).join(' ou ')}.` });
+    return true;
+  }
+  return noCondominio(candidatos[0].id, () => fluxo(tel, nomeWhatsapp, '[[cad_iniciar]]', null));
+}
+
+// ---------- Fluxo (dentro do condomínio escolhido) ----------
+async function fluxo(tel, nomeWhatsapp, texto, pendente) {
+  const cfg = await getConfig();
   const d = { ...(pendente?.dados || {}) };
-  const botao = (/\[\[(cad_[a-z_]+)\]\]/.exec(texto) || [])[1] || '';
+  const botao = (/\[\[(cad_[a-z0-9_-]+)\]\]/.exec(texto) || [])[1] || '';
   // Tirar a citação: ao tocar num botão (ou responder "em cima"), o texto chega com a mensagem citada
   // na frente, e ela contém palavras como "Corrigir" que não foram escritas pela pessoa
   let corpo = String(texto);
@@ -115,7 +151,7 @@ async function atender(tel, nomeWhatsapp, texto) {
     corpo = fimCitacao >= 0 ? corpo.slice(fimCitacao + 3) : fimSimples >= 0 ? corpo.slice(fimSimples + 2) : corpo;
   }
   // Com botão tocado, vale só o botão
-  const limpo = botao ? '' : corpo.replace(/\[\[cad_[a-z_]+\]\]/g, '').trim();
+  const limpo = botao ? '' : corpo.replace(/\[\[cad_[a-z0-9_-]+\]\]/g, '').trim();
   texto = botao ? `[[${botao}]]` : limpo;
   // Pediu de novo no meio do caminho, ou largou a conversa há mais de 7 dias: recomeça
   if (d.etapa && ((PEDIU_CADASTRO.test(limpo) && d.etapa !== 'consentimento') || Date.now() - new Date(d.inicio || 0).getTime() > 7 * DIA)) {
@@ -124,19 +160,8 @@ async function atender(tel, nomeWhatsapp, texto) {
 
   // Ainda não começou: só responde quem pede o cadastro
   if (!d.etapa) {
+    // Quem chega aqui já foi conferido no grupo deste condomínio (função atender)
     if (!PEDIU_CADASTRO.test(texto) && botao !== 'cad_iniciar') return false;
-    // Já recebeu a orientação há pouco: não repete
-    if (d.fora_do_grupo && Date.now() - new Date(d.fora_do_grupo).getTime() < DIA) return true;
-
-    let noGrupo = false;
-    if (cfg.grupo_jid) {
-      try { noGrupo = await estaNoGrupo(tel, cfg); } catch (e) { console.error('[autocadastro] grupo', e.message); }
-    }
-    if (!noGrupo) {
-      await salvarPendente(tel, nomeWhatsapp, texto, { fora_do_grupo: new Date().toISOString() }, pendente);
-      await sv.enviar(tel, `Olá! Sou o ${cfg.nome_assistente} do ${cfg.nome_predio}. Não encontrei este número no grupo dos moradores, então não consigo fazer o seu cadastro por aqui.\n\nPor favor, procure a administração do condomínio (${cfg.horario_administracao}) para fazer o cadastro.`);
-      return true;
-    }
     await salvarPendente(tel, nomeWhatsapp, texto, { etapa: 'consentimento', inicio: new Date().toISOString() }, pendente);
     await botoes(tel,
       `Olá${nomeWhatsapp ? `, ${primeiroNome(nomeWhatsapp)}` : ''}! Sou o ${cfg.nome_assistente} do ${cfg.nome_predio}. 👋\n\nPara fazer o seu cadastro, vou pedir: nome, apartamento, vínculo com o apartamento e vaga de garagem.\n\nEsses dados ficam só com a administração do condomínio e servem para atender você: chamados, avisos e dúvidas sobre o prédio. Podemos seguir?`,
@@ -244,7 +269,7 @@ async function atender(tel, nomeWhatsapp, texto) {
 async function concluir(tel, d, cfg, pendente) {
   const unidade_id = await sv.unidadeId(d.bloco, d.numero);
   const dados = { nome: d.nome, telefone: tel, tipo: d.tipo || 'morador', vaga: d.vaga || null, unidade_id, ativo: true, aceita_avisos: true, autocadastro: true, conferido: false };
-  const r = await db.from('moradores').upsert(dados, { onConflict: 'telefone' }).select('id').single();
+  const r = await db.from('moradores').upsert(dados, { onConflict: 'condominio_id,telefone' }).select('id').single();
   if (r.error) {
     console.error('[autocadastro] gravar', r.error.message);
     await sv.enviar(tel, `Tive um problema para gravar o seu cadastro agora. Tente de novo mais tarde mandando "Quero me cadastrar", ou procure a administração (${cfg.horario_administracao}).`);

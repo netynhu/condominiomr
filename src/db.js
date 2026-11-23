@@ -5,10 +5,42 @@ const { env } = require('./config');
 const fetchComLimite = (url, opts = {}) => fetch(url, { ...opts, signal: opts.signal || AbortSignal.timeout(8000) })
   .catch((e) => { throw new Error(e.name === 'TimeoutError' || e.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ? 'O banco de dados (Supabase) não está respondendo.' : e.message); });
 
-const db = createClient(env.SUPABASE_URL || 'http://localhost', env.SUPABASE_SERVICE_ROLE_KEY || 'x', {
+const cliente = createClient(env.SUPABASE_URL || 'http://localhost', env.SUPABASE_SERVICE_ROLE_KEY || 'x', {
   auth: { persistSession: false, autoRefreshToken: false },
   global: { fetch: fetchComLimite },
 });
+
+// ---------- Vários condomínios ----------
+// Tabelas que pertencem a um condomínio. Pelo "db", toda consulta nelas é filtrada pelo condomínio da vez
+// (contexto.js) e todo registro novo recebe o condominio_id. Para olhar todos os condomínios de propósito
+// (ex.: achar de qual prédio é um telefone), use "dbGlobal".
+const { condominioAtual } = require('./contexto');
+const DO_CONDOMINIO = new Set(['unidades', 'moradores', 'mensagens', 'chamados', 'reclamacoes', 'eventos', 'lembretes', 'avisos',
+  'fila_envio', 'documentos', 'manutencoes', 'grupo_mensagens', 'config', 'duvidas', 'contatos_pendentes']);
+// Podem ser gravadas sem condomínio (ex.: mensagem de quem ainda está se cadastrando)
+const SEM_CONDOMINIO_PERMITIDO = new Set(['mensagens', 'contatos_pendentes']);
+
+const comCondominio = (valores, id) => (Array.isArray(valores) ? valores.map((v) => ({ ...v, condominio_id: id })) : { ...valores, condominio_id: id });
+
+function tabela(nome) {
+  const real = cliente.from(nome);
+  if (!DO_CONDOMINIO.has(nome)) return real;
+  const id = condominioAtual();
+  if (!id) {
+    if (SEM_CONDOMINIO_PERMITIDO.has(nome)) return real;
+    throw new Error(`Consulta em "${nome}" sem condomínio definido.`);
+  }
+  return {
+    select: (...a) => real.select(...a).eq('condominio_id', id),
+    update: (...a) => real.update(...a).eq('condominio_id', id),
+    delete: (...a) => real.delete(...a).eq('condominio_id', id),
+    insert: (valores, opts) => real.insert(comCondominio(valores, id), opts),
+    upsert: (valores, opts) => real.upsert(comCondominio(valores, id), opts),
+  };
+}
+
+const db = { from: tabela, rpc: (...a) => cliente.rpc(...a) };
+const dbGlobal = cliente;
 
 // Lança erro quando o Supabase devolve erro, para não esconder falhas.
 function ok(res) {
@@ -51,18 +83,34 @@ const PADRAO = {
   autocadastro_reclamacao_conferido: '1',   // reclamação só depois que a administração conferir o cadastro
   fora_assunto_limite: '3',                 // perguntas fora do assunto (em 24h) até pausar o atendimento; 0 desliga
   fora_assunto_horas: '12',                 // por quantas horas o atendimento fica pausado
+  // Administradora do condomínio (boletos, 2ª via, acordos)
+  adm_nome: '', adm_contato: '', adm_telefone: '', adm_whatsapp: '', adm_email: '', adm_portal: '', adm_horario: '', adm_observacoes: '',
 };
 
+// Ajustes do condomínio da vez. O nome do prédio vem da tabela de condomínios quando não foi ajustado.
 async function getConfig() {
-  const linhas = ok(await db.from('config').select('chave, valor'));
-  const cfg = { ...PADRAO };
+  const id = condominioAtual();
+  const cfg = { ...PADRAO, condominio_id: id };
+  if (!id) return cfg;
+  const [linhas, cond] = await Promise.all([
+    db.from('config').select('chave, valor').then(ok),
+    cliente.from('condominios').select('nome').eq('id', id).maybeSingle().then(ok),
+  ]);
+  if (cond?.nome) cfg.nome_predio = cond.nome;
   for (const l of linhas) cfg[l.chave] = l.valor ?? '';
   return cfg;
 }
 
 async function setConfig(valores) {
   const linhas = Object.entries(valores).map(([chave, valor]) => ({ chave, valor: valor == null ? '' : String(valor) }));
-  if (linhas.length) ok(await db.from('config').upsert(linhas, { onConflict: 'chave' }));
+  if (linhas.length) ok(await db.from('config').upsert(linhas, { onConflict: 'condominio_id,chave' }));
+  // O nome do prédio também fica na tabela de condomínios (aparece no seletor do painel)
+  if (valores.nome_predio && condominioAtual()) ok(await cliente.from('condominios').update({ nome: String(valores.nome_predio) }).eq('id', condominioAtual()));
+}
+
+// Todos os condomínios ativos (para rotinas e para achar de onde é um telefone)
+async function listarCondominios() {
+  return ok(await cliente.from('condominios').select('id, nome').eq('ativo', true).order('nome'));
 }
 
 // Grava uma mensagem no histórico. Se a coluna wa_id ainda não existir (migração 004 não rodada), grava sem ela.
@@ -75,4 +123,4 @@ async function inserirMensagem(linha) {
   if (r.error) throw new Error(r.error.message);
 }
 
-module.exports = { db, ok, contar, getConfig, setConfig, inserirMensagem };
+module.exports = { db, dbGlobal, ok, contar, getConfig, setConfig, inserirMensagem, listarCondominios, PADRAO };

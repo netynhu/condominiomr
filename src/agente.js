@@ -1,5 +1,6 @@
 // O assistente que conversa com cada morador no privado
 const { db, ok, getConfig } = require('./db');
+const { noCondominio } = require('./contexto');
 const { env } = require('./config');
 const { toFile } = require('openai');
 const { openai, completar, descreverImagem } = require('./ia');
@@ -230,12 +231,22 @@ ASSUNTOS FORA DO CONDOMÍNIO
 - Cumprimentos, agradecimentos, "ok" e despedidas não são fora do assunto. Na dúvida se é do prédio, trate como do prédio.
 - Reclamações: garanta ao morador que o nome dele não será revelado. Não julgue nem exponha o vizinho.
 - Nunca fale de dívidas, inadimplência ou dados de outros moradores. Nunca revele informações de outras unidades.
-- Assuntos financeiros (boleto, valores, acordos): encaminhe à administração.
+- Assuntos financeiros (boleto, 2ª via, valores, acordos, cobrança): você não tem acesso a valores nem a dívidas e nunca fala deles. ${cfg.adm_nome ? 'Diga onde e com quem resolver, usando os dados da ADMINISTRADORA abaixo (link, WhatsApp, telefone, e-mail, horário e nome do contato, o que houver). Isso vale também para "quanto está o condomínio": indique a administradora já com o contato na mesma resposta (não pergunte se pode passar); não use perguntar_administracao nem diga que vai encaminhar.' : 'A administradora ainda não foi cadastrada: use perguntar_administracao para pedir o contato.'}
 - Quando aprender algo duradouro e útil sobre a pessoa, use salvar_memoria (sem dados sensíveis).
 - Se perguntarem se você é humano, diga que é o assistente virtual do condomínio, com acompanhamento da administração.
 - Horário da administração: ${cfg.horario_administracao}.
 
-HORÁRIOS PERMITIDOS DO PRÉDIO (definidos pela administração)
+${cfg.adm_nome ? `ADMINISTRADORA DO CONDOMÍNIO (boletos, 2ª via, valores, acordos)
+- Empresa: ${cfg.adm_nome}${cfg.adm_contato ? `
+- Falar com: ${cfg.adm_contato}` : ''}${cfg.adm_portal ? `
+- 2ª via e portal do condômino: ${cfg.adm_portal}` : ''}${cfg.adm_whatsapp ? `
+- WhatsApp: ${cfg.adm_whatsapp}` : ''}${cfg.adm_telefone ? `
+- Telefone: ${cfg.adm_telefone}` : ''}${cfg.adm_email ? `
+- E-mail: ${cfg.adm_email}` : ''}${cfg.adm_horario ? `
+- Horário: ${cfg.adm_horario}` : ''}${cfg.adm_observacoes ? `
+- Observações: ${cfg.adm_observacoes}` : ''}
+
+` : ''}HORÁRIOS PERMITIDOS DO PRÉDIO (definidos pela administração)
 - Obras, reformas e serviços nos apartamentos (furadeira, martelo, marceneiro, pintor etc.): ${cfg.horario_obras}
 - Mudanças: ${cfg.horario_mudancas}
 - Silêncio obrigatório: ${cfg.horario_silencio}
@@ -501,10 +512,61 @@ async function processar(tel) {
   return emSequencia(tel, async () => {
     // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
     const admin = await require('./agente_admin').acharAdmin(tel);
-    if (admin) return require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto);
+    if (admin) {
+      // A imagem que o síndico mandou (para um aviso com imagem no grupo)
+      const { foto } = midiaPendente(tel);
+      return noCondominio(admin.condominio_id, () => require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto, { foto, limpar: () => midiasPendentes.delete(tel) }));
+    }
+
+    // De qual condomínio é este morador. Número desconhecido: só o pedido de cadastro é atendido.
+    const cadastros = (await sv.moradorEmTodos(tel)).filter((m) => m.ativo);
+    if (!cadastros.length) {
+      if ((await sv.moradorEmTodos(tel)).length) return; // cadastrado, mas desativado
+      return atenderNaoCadastrado(tel, b.nome, texto);
+    }
+    const escolhido = await escolherCondominio(tel, cadastros, texto);
+    if (!escolhido) return;
+    return noCondominio(escolhido.condominioId, () => atenderMorador(tel, b, escolhido.texto));
+  });
+}
+
+// Quem mora (ou tem apartamento) em mais de um condomínio atendido pelo mesmo número:
+// usa o prédio escolhido nas últimas 2 horas; se não houver, pergunta com botões.
+async function escolherCondominio(tel, cadastros, texto) {
+  if (cadastros.length === 1) return { condominioId: cadastros[0].condominio_id, texto };
+  const { dbGlobal } = require('./db');
+  const botao = (/\[\[cond_([0-9a-f-]{36})\]\]/.exec(texto) || [])[1];
+  if (botao) {
+    const m = cadastros.find((c) => c.condominio_id === botao);
+    if (m) {
+      await dbGlobal.from('moradores').update({ conversa_em: new Date().toISOString() }).eq('id', m.id);
+      const resto = texto.replace(/\[\[cond_[0-9a-f-]{36}\]\]/g, '').trim();
+      if (!resto) {
+        await noCondominio(m.condominio_id, () => sv.enviar(tel, `Certo, ${primeiroNome(m.nome)}! Agora estamos falando do ${m.condominio.nome}. Pode mandar sua mensagem. Para trocar de prédio, escreva "trocar de condomínio".`, m.id));
+        return null;
+      }
+      return { condominioId: m.condominio_id, texto: resto };
+    }
+  }
+  const trocar = /trocar (de )?(condom[ií]nio|pr[eé]dio)/i.test(texto);
+  const recente = trocar ? null : cadastros
+    .filter((c) => c.conversa_em && Date.now() - new Date(c.conversa_em).getTime() < 2 * 3600000)
+    .sort((a, b) => new Date(b.conversa_em) - new Date(a.conversa_em))[0];
+  if (recente) {
+    await dbGlobal.from('moradores').update({ conversa_em: new Date().toISOString() }).eq('id', recente.id);
+    return { condominioId: recente.condominio_id, texto };
+  }
+  await noCondominio(cadastros[0].condominio_id, () => sv.enviarBotoes(tel,
+    `Olá, ${primeiroNome(cadastros[0].nome)}! Você está cadastrado(a) em mais de um condomínio. Sobre qual prédio é a sua mensagem?`,
+    cadastros.slice(0, 3).map((c) => `🏢 ${c.condominio.nome}|cond_${c.condominio_id}`),
+    { planoB: `Responda com o nome do prédio: ${cadastros.map((c) => c.condominio.nome).join(' ou ')}.`, moradorId: cadastros[0].id }));
+  return null;
+}
+
+async function atenderMorador(tel, b, texto) {
+  {
     const morador = await sv.acharMorador(tel);
-    if (!morador) return atenderNaoCadastrado(tel, b.nome, texto);
-    if (!morador.ativo) return;
+    if (!morador || !morador.ativo) return;
     // Botão antigo do cadastro clicado por quem já está cadastrado: não interessa ao assistente
     if (/^\s*(\[\[cad_[a-z_]+\]\]\s*)+$/.test(texto)) return;
 
@@ -534,7 +596,7 @@ async function processar(tel) {
     }
     if (resposta) await sv.enviar(morador.telefone, resposta, morador.id);
     atualizarResumo(morador).catch((e) => console.error('[agente] resumo', e.message));
-  });
+  }
 }
 
 // Entrada principal: chamada pelo webhook para cada mensagem privada
@@ -550,7 +612,8 @@ const BOTOES = {
 async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, botao }) {
   if (botao) {
     if (BOTOES[botao]) return BOTOES[botao];
-    if (/^cad_[a-z_]+$/.test(botao)) return `[[${botao}]]`; // botões do autocadastro
+    if (/^cad_[a-z0-9_-]+$/.test(botao)) return `[[${botao}]]`; // botões do autocadastro
+    if (/^cond_[0-9a-f-]{36}$/.test(botao)) return `[[${botao}]]`; // escolha do condomínio
     const voltou = /^reclamacao_voltou:(\d+)$/.exec(botao);
     if (voltou) return `O problema da reclamação nº ${voltou[1]} voltou a acontecer.`;
     if (botao === 'reclamacao_ok') return 'Está resolvido, obrigado!';

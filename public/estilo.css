@@ -209,3 +209,8 @@ hr{border:0;border-top:1px solid var(--line);width:100%;margin:0}
 .grade-equipe{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
 .grade-equipe .tabela td{vertical-align:middle}
 @media (max-width:1180px){.grade-equipe{grid-template-columns:1fr}}
+
+/* ---------- Seletor de condomínio (menu lateral) ---------- */
+.seletor-condominio{padding:0 8px 10px;display:flex;flex-direction:column;gap:4px}
+.seletor-condominio label{font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--side-muted)}
+.seletor-condominio select{width:100%;background:var(--side-2);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 10px;font:inherit;font-size:.88rem}

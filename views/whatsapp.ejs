@@ -1,6 +1,6 @@
 <%- include('partials/topo') %>
 <div class="cabeca">
-  <div><h1>Conexão do WhatsApp</h1><p class="muted">O número do prédio que conversa com os moradores.</p></div>
+  <div><h1>Conexão do WhatsApp</h1><p class="muted">O número que conversa com os moradores<%= condominios.length > 1 ? ' de todos os condomínios' : '' %>. O grupo dos moradores é escolhido em cada condomínio.</p></div>
 </div>
 
 <div class="grade2">
@@ -17,7 +17,7 @@
     <div id="conectado" <%= status && status.conectado ? '' : 'hidden' %>>
       <p>O assistente está atendendo pelo número <b id="numero"><%= status && status.numero ? u.formatarTelefone(status.numero) : '' %></b><%= status && status.perfil ? ` (${status.perfil})` : '' %>.</p>
       <div class="acoes" style="margin-top:12px">
-        <form method="post" action="/whatsapp/desconectar" data-confirmar="Desconectar o WhatsApp do prédio? O assistente para de responder até ler um novo QR code."><button class="btn perigo" type="submit">Desconectar</button></form>
+        <% if (usuario.dono) { %><form method="post" action="/whatsapp/desconectar" data-confirmar="Desconectar o WhatsApp? O assistente para de responder em todos os condomínios até ler um novo QR code."><button class="btn perigo" type="submit">Desconectar</button></form><% } %>
       </div>
     </div>
 
@@ -27,6 +27,7 @@
         <div class="paircode" id="paircode" hidden></div>
         <p class="muted small" id="qr-texto">No celular do prédio: WhatsApp &gt; Configurações &gt; Dispositivos conectados &gt; Conectar dispositivo. Aponte a câmera para o código.</p>
       </div>
+      <% if (!usuario.dono) { %><p class="muted">Só o responsável pela plataforma conecta o número. Fale com ele se o WhatsApp estiver desconectado.</p><% } else { %>
       <form class="campos" id="form-conectar">
         <p>Conecte o número exclusivo do prédio. Use um chip só para isso, nunca o número pessoal de alguém.</p>
         <label>Celular do prédio (opcional, só para conectar por código em vez de QR)
@@ -34,11 +35,12 @@
         </label>
         <div class="acoes"><button class="btn" type="submit" id="btn-conectar">Gerar QR code</button></div>
       </form>
+      <% } %>
     </div>
   </div>
 
   <div class="card">
-    <h2>Grupo dos moradores</h2>
+    <h2>Grupo dos moradores<%= condominios.length > 1 && condominioAtual ? ' do ' + condominioAtual.nome : '' %></h2>
     <p class="muted">O assistente lê o grupo para entender os assuntos do prédio e conhecer os moradores. Ele nunca escreve no grupo.</p>
     <p>Grupo lido: <b><%= cfg.grupo_nome || 'nenhum' %></b></p>
     <div class="acoes"><a class="btn sec" href="/whatsapp/grupos">Escolher grupo</a></div>
@@ -46,7 +48,7 @@
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <h2>Recebimento de mensagens</h2>
     <p class="small muted">Endereço que a Uazapi usa para entregar as mensagens: <code><%= webhook || 'defina APP_URL' %></code>. Ele é configurado sozinho ao gerar o QR code.</p>
-    <form method="post" action="/whatsapp/webhook"><button class="btn sec peq" type="submit">Configurar de novo</button></form>
+    <% if (usuario.dono) { %><form method="post" action="/whatsapp/webhook"><button class="btn sec peq" type="submit">Configurar de novo</button></form><% } %>
   </div>
 </div>
 
@@ -82,7 +84,7 @@
     }, 3000);
   }
 
-  $('form-conectar').addEventListener('submit', async (e) => {
+  $('form-conectar')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = $('btn-conectar');
     await ocupado(btn, async () => {

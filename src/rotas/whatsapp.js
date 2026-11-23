@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { env } = require('../config');
 const { setConfig, getConfig } = require('../db');
 const uazapi = require('../uazapi');
-const { a, exigir, avisar } = require('./comum');
+const { a, exigir, exigirDono, avisar } = require('./comum');
 
 const urlWebhook = () => `${env.APP_URL}/webhook/uazapi/${env.WEBHOOK_SECRET}`;
 
@@ -18,7 +18,7 @@ router.get('/whatsapp/status.json', exigir('admin'), a(async (req, res) => {
   try { res.json(await uazapi.status()); } catch (e) { res.status(502).json({ erro: e.message }); }
 }));
 
-router.post('/whatsapp/conectar', exigir('admin'), a(async (req, res) => {
+router.post('/whatsapp/conectar', exigirDono, a(async (req, res) => {
   try {
     // Garante que as mensagens cheguem ao sistema antes de conectar
     if (env.APP_URL && env.WEBHOOK_SECRET) await uazapi.configurarWebhook(urlWebhook());
@@ -29,12 +29,12 @@ router.post('/whatsapp/conectar', exigir('admin'), a(async (req, res) => {
   }
 }));
 
-router.post('/whatsapp/desconectar', exigir('admin'), a(async (req, res) => {
+router.post('/whatsapp/desconectar', exigirDono, a(async (req, res) => {
   try { await uazapi.desconectar(); avisar(req, 'WhatsApp desconectado.'); } catch (e) { avisar(req, 'Não foi possível desconectar: ' + e.message, 'erro'); }
   res.redirect('/whatsapp');
 }));
 
-router.post('/whatsapp/webhook', exigir('admin'), a(async (req, res) => {
+router.post('/whatsapp/webhook', exigirDono, a(async (req, res) => {
   try { await uazapi.configurarWebhook(urlWebhook()); avisar(req, 'Recebimento de mensagens configurado.'); } catch (e) { avisar(req, 'Falha ao configurar: ' + e.message, 'erro'); }
   res.redirect('/whatsapp');
 }));

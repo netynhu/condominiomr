@@ -1,5 +1,6 @@
 // Regras de negócio usadas pelo agente, pelo painel e pelas rotinas automáticas
-const { db, ok, getConfig, inserirMensagem } = require('./db');
+const { db, dbGlobal, ok, getConfig, inserirMensagem } = require('./db');
+const { condominioAtual } = require('./contexto');
 const uazapi = require('./uazapi');
 const { env } = require('./config');
 const { lerFoto } = require('./fotos');
@@ -10,6 +11,29 @@ async function acharMorador(telefone) {
   if (!vars[0]) return null;
   const linhas = ok(await db.from('moradores').select('*, unidade:unidades(*)').in('telefone', vars).limit(1));
   return linhas[0] || null;
+}
+
+// O mesmo telefone em todos os condomínios (para saber de qual prédio é quem escreveu)
+async function moradorEmTodos(telefone) {
+  const vars = variantesTelefone(telefone);
+  if (!vars[0]) return [];
+  return ok(await dbGlobal.from('moradores').select('id, nome, condominio_id, ativo, conversa_em, condominio:condominios(nome, ativo)').in('telefone', vars))
+    .filter((m) => m.condominio?.ativo !== false);
+}
+
+// Condomínios que a pessoa da equipe atende ("dono" da plataforma vê todos)
+async function condominiosDoUsuario(usuario) {
+  if (usuario.dono) return ok(await dbGlobal.from('condominios').select('id, nome').eq('ativo', true).order('nome'));
+  const linhas = ok(await dbGlobal.from('usuario_condominios').select('condominio:condominios(id, nome, ativo)').eq('usuario_id', usuario.id));
+  return linhas.map((l) => l.condominio).filter((c) => c && c.ativo !== false).map(({ id, nome }) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+}
+
+// Telefones da equipe do condomínio da vez com os perfis pedidos (ex.: ['zelador'] ou ['sindico','admin'])
+async function telefonesDaEquipe(perfis) {
+  const id = condominioAtual();
+  if (!id) return [];
+  const linhas = ok(await dbGlobal.from('usuario_condominios').select('usuario:usuarios(telefone, perfil, ativo)').eq('condominio_id', id));
+  return linhas.map((l) => l.usuario).filter((u) => u && u.ativo && u.telefone && perfis.includes(u.perfil)).map((u) => u.telefone);
 }
 
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
@@ -53,8 +77,8 @@ async function avisarEquipe(papel, texto) {
 // Todos os telefones de zelador: o do painel de ajustes e os dos usuários com perfil zelador
 async function telefonesZeladores() {
   const cfg = await getConfig();
-  const usuarios = ok(await db.from('usuarios').select('telefone').eq('perfil', 'zelador').eq('ativo', true).not('telefone', 'is', null));
-  return [...new Set([cfg.telefone_zelador, ...usuarios.map((u) => u.telefone)].map(normalizarTelefone).filter(Boolean))];
+  const equipe = await telefonesDaEquipe(['zelador']);
+  return [...new Set([cfg.telefone_zelador, ...equipe].map(normalizarTelefone).filter(Boolean))];
 }
 
 async function registrarHistoricoChamado(chamadoId, acao, usuarioNome) {
@@ -139,12 +163,18 @@ async function mudarStatusChamado(id, status, observacao, usuarioNome, fotoConcl
 }
 
 // Avisos oficiais no grupo dos moradores (o assistente não conversa no grupo, só posta)
-async function postarNoGrupo(titulo, texto) {
+async function postarNoGrupo(titulo, texto, imagemId) {
   const cfg = await getConfig();
   if (!cfg.grupo_jid) throw new Error('Escolha o grupo dos moradores na página do WhatsApp antes de postar avisos.');
-  const limpo = String(texto).replaceAll('{nome}', '').replace(/^\s*Olá,?\s*!?\s*/i, '').trim();
-  const msg = `📢 *${titulo}*\n\n${limpo}\n\n_${cfg.nome_predio} · Administração_`;
-  await uazapi.enviarNoGrupo(cfg.grupo_jid, msg);
+  const limpo = String(texto || '').replaceAll('{nome}', '').replace(/^\s*Olá,?\s*!?\s*/i, '').trim();
+  const msg = [titulo && `📢 *${titulo}*`, limpo, `_${cfg.nome_predio} · Administração_`].filter(Boolean).join('\n\n');
+  if (imagemId) {
+    // Aviso com imagem: a imagem vai com o título e o texto como legenda
+    const { buffer } = await lerFoto(imagemId);
+    await uazapi.enviarImagemNoGrupo(cfg.grupo_jid, buffer, msg);
+  } else {
+    await uazapi.enviarNoGrupo(cfg.grupo_jid, msg);
+  }
   return msg;
 }
 
@@ -295,6 +325,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, moradorEmTodos, telefonesDaEquipe, condominiosDoUsuario, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, unidadeId, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

@@ -103,7 +103,7 @@ router.post('/moradores/importar', admin, a(async (req, res) => {
     const [nome, tel, bloco, numero, email, vaga] = linha.split(/[;\t]/).map((x) => (x || '').trim());
     const telefone = normalizarTelefone(tel);
     if (!nome || telefone.length < 12) { erros.push(`linha ${i + 1}`); continue; }
-    const r = await db.from('moradores').upsert({ nome, telefone, email: email || null, vaga: vaga || null, unidade_id: await unidadeId(bloco, numero) }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single();
+    const r = await db.from('moradores').upsert({ nome, telefone, email: email || null, vaga: vaga || null, unidade_id: await unidadeId(bloco, numero) }, { onConflict: 'condominio_id,telefone' }).select('*, unidade:unidades(*)').single();
     if (r.error) erros.push(`linha ${i + 1}`); else { criados++; novos.push(r.data); }
   }
   // Boas-vindas de uma importação vão pela fila lenta, para não arriscar o número
@@ -184,15 +184,31 @@ router.post('/documentos/:id/excluir', admin, a(async (req, res) => {
 }));
 
 // ---------- Equipe (usuários do painel) ----------
+// Cada pessoa da equipe é ligada a um ou mais condomínios (usuario_condominios).
+// A tela mostra só a equipe do condomínio da vez. Excluir tira a pessoa deste condomínio;
+// ela só é apagada de vez quando não atende mais nenhum.
+const { dbGlobal } = require('../db');
+const { condominioAtual } = require('../contexto');
+
+async function equipeDoCondominio() {
+  const linhas = ok(await dbGlobal.from('usuario_condominios').select('usuario:usuarios(id, nome, email, perfil, telefone, ativo, dono, criado_em)').eq('condominio_id', condominioAtual()));
+  return linhas.map((l) => l.usuario).filter(Boolean).sort((x, y) => x.nome.localeCompare(y.nome));
+}
+
+async function daEquipe(usuarioId) {
+  const r = ok(await dbGlobal.from('usuario_condominios').select('usuario_id').eq('usuario_id', usuarioId).eq('condominio_id', condominioAtual()).limit(1));
+  return r.length > 0;
+}
+
 router.get('/equipe', admin, a(async (req, res) => {
-  const usuarios = ok(await db.from('usuarios').select('id, nome, email, perfil, telefone, ativo, criado_em').order('nome'));
-  res.render('equipe', { titulo: 'Equipe e acessos', usuarios });
+  res.render('equipe', { titulo: 'Equipe e acessos', usuarios: await equipeDoCondominio() });
 }));
 
 // Gera um link de acesso sem senha (bom para o zelador) e manda pelo WhatsApp
 router.post('/equipe/:id/link', admin, a(async (req, res) => {
+  if (!(await daEquipe(req.params.id))) return res.redirect('/equipe');
   const token = crypto.randomBytes(24).toString('hex');
-  const u = ok(await db.from('usuarios').update({ token_acesso: token }).eq('id', req.params.id).select('nome, telefone, perfil').single());
+  const u = ok(await dbGlobal.from('usuarios').update({ token_acesso: token }).eq('id', req.params.id).select('nome, telefone, perfil').single());
   const cfg = await getConfig();
   const link = `${env.APP_URL}/entrar/${token}`;
   let enviado = false;
@@ -208,8 +224,13 @@ router.post('/equipe/:id/link', admin, a(async (req, res) => {
 
 router.post('/equipe/:id/excluir', admin, a(async (req, res) => {
   if (req.params.id === req.session.usuario.id) { avisar(req, 'Você não pode excluir o seu próprio acesso.', 'erro'); return res.redirect('/equipe'); }
-  const u = ok(await db.from('usuarios').delete().eq('id', req.params.id).select('nome').single());
-  avisar(req, `Acesso de ${u.nome} excluído.`);
+  if (!(await daEquipe(req.params.id))) return res.redirect('/equipe');
+  ok(await dbGlobal.from('usuario_condominios').delete().eq('usuario_id', req.params.id).eq('condominio_id', condominioAtual()));
+  const resta = ok(await dbGlobal.from('usuario_condominios').select('condominio_id').eq('usuario_id', req.params.id).limit(1));
+  const u = resta.length
+    ? ok(await dbGlobal.from('usuarios').select('nome').eq('id', req.params.id).single())
+    : ok(await dbGlobal.from('usuarios').delete().eq('id', req.params.id).eq('dono', false).select('nome').maybeSingle()) || { nome: 'a pessoa' };
+  avisar(req, resta.length ? `${u.nome} não faz mais parte da equipe deste condomínio (continua nos outros que atende).` : `Acesso de ${u.nome} excluído.`);
   res.redirect('/equipe');
 }));
 
@@ -222,19 +243,31 @@ router.post('/equipe', admin, a(async (req, res) => {
     if (!senha) senha = crypto.randomBytes(12).toString('hex');
   }
   const dados = { nome, email: String(email || '').trim().toLowerCase(), perfil, telefone: normalizarTelefone(telefone) || null };
+  let jaExistia = false;
   if (id) {
+    if (!(await daEquipe(id))) return res.redirect('/equipe');
     dados.ativo = req.body.ativo === 'on';
     if (senha) dados.senha_hash = await bcrypt.hash(senha, 10);
     if (id === req.session.usuario.id && (!dados.ativo || !['admin', 'sindico'].includes(perfil))) { avisar(req, 'Você não pode tirar o seu próprio acesso de administrador.', 'erro'); return res.redirect('/equipe'); }
-    ok(await db.from('usuarios').update(dados).eq('id', id));
+    ok(await dbGlobal.from('usuarios').update(dados).eq('id', id));
   } else {
-    if (!senha || senha.length < 8) { avisar(req, 'A senha precisa de pelo menos 8 caracteres.', 'erro'); return res.redirect('/equipe'); }
-    const r = await db.from('usuarios').insert({ ...dados, senha_hash: await bcrypt.hash(senha, 10) });
-    if (r.error) { avisar(req, r.error.code === '23505' ? 'Este e-mail já tem acesso.' : r.error.message, 'erro'); return res.redirect('/equipe'); }
+    // E-mail que já tem acesso (ex.: síndico profissional de outro prédio): só liga ao condomínio da vez
+    const [existe] = ok(await dbGlobal.from('usuarios').select('id, nome').eq('email', dados.email).limit(1));
+    let novoId = existe?.id;
+    if (existe) jaExistia = true;
+    else {
+      if (!senha || senha.length < 8) { avisar(req, 'A senha precisa de pelo menos 8 caracteres.', 'erro'); return res.redirect('/equipe'); }
+      const r = await dbGlobal.from('usuarios').insert({ ...dados, senha_hash: await bcrypt.hash(senha, 10), condominio_atual: condominioAtual() }).select('id').single();
+      if (r.error) { avisar(req, r.error.message, 'erro'); return res.redirect('/equipe'); }
+      novoId = r.data.id;
+    }
+    ok(await dbGlobal.from('usuario_condominios').upsert({ usuario_id: novoId, condominio_id: condominioAtual() }, { onConflict: 'usuario_id,condominio_id' }));
   }
   // O síndico cadastrado com WhatsApp passa a receber os alertas do síndico
   if (perfil === 'sindico' && dados.telefone && (id ? dados.ativo : true)) await setConfig({ telefone_sindico: dados.telefone });
-  avisar(req, perfil === 'sindico' && dados.telefone ? 'Acesso salvo. Este número passa a receber os alertas do síndico e pode usar o assistente no WhatsApp.' : 'Acesso salvo.');
+  avisar(req, jaExistia
+    ? `Este e-mail já tinha acesso: a pessoa passou a fazer parte da equipe deste condomínio também (com a mesma senha).`
+    : perfil === 'sindico' && dados.telefone ? 'Acesso salvo. Este número passa a receber os alertas do síndico e pode usar o assistente no WhatsApp.' : 'Acesso salvo.');
   res.redirect('/equipe');
 }));
 
@@ -244,7 +277,8 @@ router.get('/configuracoes', admin, a(async (req, res) => {
 }));
 
 router.post('/configuracoes', admin, a(async (req, res) => {
-  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras', 'horario_obras', 'horario_mudancas', 'horario_silencio'];
+  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras', 'horario_obras', 'horario_mudancas', 'horario_silencio',
+    'adm_nome', 'adm_contato', 'adm_telefone', 'adm_whatsapp', 'adm_email', 'adm_portal', 'adm_horario', 'adm_observacoes'];
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';

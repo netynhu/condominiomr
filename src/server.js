@@ -8,7 +8,8 @@ const util = require('./util');
 const uazapi = require('./uazapi');
 const agente = require('./agente');
 const rotinas = require('./rotinas');
-const { db } = require('./db');
+const { db, dbGlobal, listarCondominios } = require('./db');
+const { noCondominio } = require('./contexto');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -36,7 +37,7 @@ async function ecoDoSistema(ev) {
   const ids = (ev.ids || []).filter(Boolean).map((id) => String(id).split(':').pop());
   const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim();
   const texto = norm(ev.texto);
-  const r = await db.from('mensagens').select('wa_id, texto').eq('direcao', 'saida')
+  const r = await dbGlobal.from('mensagens').select('wa_id, texto').eq('direcao', 'saida')
     .gte('criado_em', new Date(Date.now() - 15 * 60000).toISOString()).order('criado_em', { ascending: false }).limit(300);
   if (r.error) { console.error('[eco] consulta', r.error.message); return false; }
   return r.data.some((m) => {
@@ -68,13 +69,20 @@ async function tratarWebhook(body) {
   }
 
   if (ev.ehGrupo) {
-    const cfg = await getConfig();
-    if (!cfg.grupo_jid || ev.chatid !== cfg.grupo_jid || !ev.texto) return;
-    const { acharMorador } = require('./servicos');
-    const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
-    await db.from('grupo_mensagens').insert({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
-    // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
-    if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, ev.texto);
+    if (!ev.texto) return;
+    // De qual condomínio é este grupo (cada condomínio escolhe o seu grupo na página do WhatsApp)
+    const donos = await dbGlobal.from('config').select('condominio_id').eq('chave', 'grupo_jid').eq('valor', ev.chatid);
+    if (donos.error) return console.error('[grupo]', donos.error.message);
+    for (const { condominio_id: id } of donos.data) {
+      await noCondominio(id, async () => {
+        const cfg = await getConfig();
+        const { acharMorador } = require('./servicos');
+        const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
+        await db.from('grupo_mensagens').insert({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
+        // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
+        if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, ev.texto);
+      });
+    }
     return;
   }
 
@@ -93,6 +101,34 @@ app.use(cookieSession({
   httpOnly: true,
   secure: env.APP_URL.startsWith('https://'),
 }));
+
+// Condomínio da vez no painel: o escolhido no seletor (ou o primeiro que a pessoa atende).
+// Toda a página roda dentro dele, e o banco filtra os dados por ele.
+app.use(async (req, res, next) => {
+  const u = req.session.usuario;
+  res.locals.condominios = [];
+  res.locals.condominioAtual = null;
+  if (!u) return next();
+  try {
+    if (!req.session.condominios || Date.now() - (req.session.condominiosEm || 0) > 5 * 60000) {
+      req.session.condominios = await require('./servicos').condominiosDoUsuario(u);
+      req.session.condominiosEm = Date.now();
+    }
+  } catch (e) { console.error('[condomínios]', e.message); }
+  const lista = req.session.condominios || [];
+  const atual = lista.find((c) => c.id === req.session.condominioId) || lista[0] || null;
+  req.session.condominioId = atual?.id || null;
+  res.locals.condominios = lista;
+  res.locals.condominioAtual = atual;
+  if (!atual) {
+    // Sem condomínio: o dono vai criar o primeiro; os outros só podem sair
+    const livre = ['/condominios', '/sair', '/login'].some((p) => req.path === p || req.path.startsWith(p + '/'));
+    if (u.dono && !livre) return res.redirect('/condominios');
+    if (!u.dono && !livre) return res.status(403).render('erro', { titulo: 'Sem condomínio', mensagem: 'Seu acesso ainda não está ligado a nenhum condomínio. Fale com a administração.', usuario: u, condominios: [], condominioAtual: null, cfg: { nome_predio: 'Condomínio' }, contadores: {}, caminho: req.path, aviso: null, faltando: [], icone, u: util });
+    return next();
+  }
+  noCondominio(atual.id, () => next());
+});
 
 app.use(async (req, res, next) => {
   res.locals.u = util;
@@ -124,6 +160,7 @@ app.use(async (req, res, next) => {
 });
 
 app.use(require('./rotas/acesso'));
+app.use(require('./rotas/condominios'));
 app.use(require('./rotas/zelador'));
 app.use(require('./rotas/whatsapp'));
 app.use(require('./rotas/cadastro'));

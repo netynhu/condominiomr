@@ -11,6 +11,21 @@
   </div>
   <label>Horário de atendimento da administração<input name="horario_administracao" id="horario_administracao" value="<%= c.horario_administracao %>"></label>
 
+  <h2 style="margin-top:8px">Administradora</h2>
+  <p class="small muted">Quando o morador perguntar de boleto, 2ª via, valores ou acordos, o assistente diz onde e com quem resolver. Ele nunca fala de valores nem de dívidas.</p>
+  <div class="linha-campos">
+    <label>Nome da administradora<input name="adm_nome" id="adm_nome" value="<%= c.adm_nome || '' %>" placeholder="Ex.: Administradora Alfa"></label>
+    <label>Falar com<input name="adm_contato" id="adm_contato" value="<%= c.adm_contato || '' %>" placeholder="Ex.: Fernanda, gerente da conta"></label>
+  </div>
+  <label>Site ou portal da 2ª via<input name="adm_portal" id="adm_portal" value="<%= c.adm_portal || '' %>" placeholder="https://..."></label>
+  <div class="linha-campos">
+    <label>WhatsApp<input name="adm_whatsapp" id="adm_whatsapp" value="<%= c.adm_whatsapp || '' %>" inputmode="tel" placeholder="(11) 99999-8888"></label>
+    <label>Telefone<input name="adm_telefone" id="adm_telefone" value="<%= c.adm_telefone || '' %>" inputmode="tel"></label>
+    <label>E-mail<input type="email" name="adm_email" id="adm_email" value="<%= c.adm_email || '' %>"></label>
+  </div>
+  <label>Horário de atendimento da administradora<input name="adm_horario" id="adm_horario" value="<%= c.adm_horario || '' %>" placeholder="Ex.: segunda a sexta, das 9h às 17h"></label>
+  <label>Observações<textarea name="adm_observacoes" id="adm_observacoes" rows="2" placeholder="Ex.: Acordos só por e-mail. O boleto chega todo dia 1º no e-mail cadastrado."><%= c.adm_observacoes || '' %></textarea></label>
+
   <h2 style="margin-top:8px">Quem recebe alertas no WhatsApp</h2>
   <div class="linha-campos">
     <label>Síndico<input name="telefone_sindico" id="telefone_sindico" value="<%= c.telefone_sindico ? u.formatarTelefone(c.telefone_sindico) : '' %>" inputmode="tel"></label>

@@ -125,10 +125,22 @@ router.get('/avisos', exigir('admin'), a(async (req, res) => {
 }));
 
 router.post('/avisos', exigir('admin'), a(async (req, res) => {
-  const { titulo, texto, publico, acao } = req.body;
+  const { titulo, publico, acao } = req.body;
+  const texto = String(req.body.texto || '').trim();
   const canal = req.body.canal === 'privado' ? 'privado' : 'grupo';
-  if (!titulo || !texto) { avisar(req, 'Preencha título e texto.', 'erro'); return res.redirect('/avisos'); }
-  const av = ok(await db.from('avisos').insert({ titulo, texto, canal, publico: canal === 'grupo' ? 'todos' : (publico || 'todos'), criado_por: req.session.usuario.nome }).select().single());
+  // Imagem opcional (vem comprimida do navegador, em base64). Só vai no grupo.
+  let imagem = null;
+  if (req.body.imagem) {
+    const { dataUrlParaBuffer, salvarFoto } = require('../fotos');
+    const arq = dataUrlParaBuffer(req.body.imagem);
+    if (!arq) { avisar(req, 'Não consegui ler a imagem. Tente outra.', 'erro'); return res.redirect('/avisos'); }
+    if (canal === 'privado') { avisar(req, 'Aviso com imagem só pode ser postado no grupo.', 'erro'); return res.redirect('/avisos'); }
+    imagem = await salvarFoto(arq.buffer, arq.mime, 'avisos');
+  }
+  if (!titulo || (!texto && !imagem)) { avisar(req, 'Preencha o título e o texto (ou envie uma imagem).', 'erro'); return res.redirect('/avisos'); }
+  const dados = { titulo, texto, canal, publico: canal === 'grupo' ? 'todos' : (publico || 'todos'), criado_por: req.session.usuario.nome };
+  if (imagem) dados.imagem = imagem;
+  const av = ok(await db.from('avisos').insert(dados).select().single());
   if (acao === 'enviar') return enviarAviso(req, res, av);
   avisar(req, 'Rascunho salvo.');
   res.redirect('/avisos');
@@ -143,9 +155,9 @@ router.post('/avisos/:id/enviar', exigir('admin'), a(async (req, res) => {
 async function enviarAviso(req, res, av) {
   if (av.canal === 'grupo') {
     try {
-      await sv.postarNoGrupo(av.titulo, av.texto);
+      await sv.postarNoGrupo(av.titulo, av.texto, av.imagem);
       ok(await db.from('avisos').update({ status: 'enviado', total: 1, enviado_em: new Date().toISOString() }).eq('id', av.id));
-      avisar(req, 'Aviso postado no grupo dos moradores.');
+      avisar(req, av.imagem ? 'Aviso com imagem postado no grupo dos moradores.' : 'Aviso postado no grupo dos moradores.');
     } catch (e) {
       avisar(req, `Não foi possível postar no grupo: ${e.message}. O aviso ficou salvo como rascunho.`, 'erro');
     }

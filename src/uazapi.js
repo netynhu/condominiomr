@@ -168,6 +168,15 @@ async function enviarNoGrupo(grupoJid, texto) {
   return json;
 }
 
+// Posta uma imagem com legenda no grupo dos moradores (avisos com imagem)
+async function enviarImagemNoGrupo(grupoJid, buffer, legenda = '') {
+  if (!grupoJid || !grupoJid.endsWith('@g.us')) throw new Error('Nenhum grupo dos moradores configurado.');
+  lembrarTexto(legenda);
+  const json = await chamar('/send/media', { method: 'POST', body: semPrevia({ number: grupoJid, type: 'image', file: buffer.toString('base64'), text: legenda }, legenda) });
+  lembrarEnvio(json, legenda);
+  return json;
+}
+
 // Baixa a mídia de uma mensagem recebida (áudio vem em MP3).
 // citada=true baixa a mídia da mensagem que a pessoa citou ao responder.
 async function baixarMidia(ids, { citada = false, limiteBytes = 0 } = {}) {
@@ -267,4 +276,4 @@ function lerWebhook(body) {
   };
 }
 
-module.exports = { participantesDoGrupo, numeroDaInstancia, status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };
+module.exports = { enviarImagemNoGrupo, participantesDoGrupo, numeroDaInstancia, status, conectar, desconectar, configurarWebhook, listarGrupos, enviarTexto, enviarMenu, enviarFoto, enviarNoGrupo, baixarMidia, lerWebhook, idEnviado };

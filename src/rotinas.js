@@ -1,5 +1,6 @@
 // Rotinas automáticas que rodam enquanto o servidor estiver ligado
-const { db, ok, getConfig } = require('./db');
+const { db, dbGlobal, ok, getConfig, listarCondominios } = require('./db');
+const { noCondominio } = require('./contexto');
 const { env } = require('./config');
 const uazapi = require('./uazapi');
 const sv = require('./servicos');
@@ -13,13 +14,25 @@ function dentroDoHorario() {
   return hora >= env.ENVIO_HORA_INICIO && hora < env.ENVIO_HORA_FIM;
 }
 
-// Envia uma mensagem da fila por vez, com intervalo aleatório, para proteger o número
+// Envia uma mensagem da fila por vez, com intervalo aleatório, para proteger o número.
+// A fila é uma só para todos os condomínios, porque o número de WhatsApp é o mesmo.
 async function processarFila() {
   if (enviando || Date.now() < proximoEnvio || !dentroDoHorario()) return;
   enviando = true;
   try {
-    const [item] = ok(await db.from('fila_envio').select('*').eq('status', 'pendente').lte('agendado_para', new Date().toISOString()).order('id').limit(1));
+    const [item] = ok(await dbGlobal.from('fila_envio').select('*').eq('status', 'pendente').lte('agendado_para', new Date().toISOString()).order('id').limit(1));
     if (!item) return;
+    await noCondominio(item.condominio_id, () => enviarItem(item));
+    const min = env.ENVIO_INTERVALO_MIN * 1000;
+    const max = Math.max(min, env.ENVIO_INTERVALO_MAX * 1000);
+    proximoEnvio = Date.now() + min + Math.random() * (max - min);
+  } finally {
+    enviando = false;
+  }
+}
+
+async function enviarItem(item) {
+  {
     try {
       await uazapi.enviarTexto(item.telefone, item.texto);
       await db.from('fila_envio').update({ status: 'enviado', enviado_em: new Date().toISOString() }).eq('id', item.id);
@@ -36,11 +49,6 @@ async function processarFila() {
       const restantes = (await db.from('fila_envio').select('*', { count: 'exact', head: true }).eq('aviso_id', item.aviso_id).eq('status', 'pendente')).count;
       if (restantes === 0) await db.from('avisos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).eq('id', item.aviso_id);
     }
-    const min = env.ENVIO_INTERVALO_MIN * 1000;
-    const max = Math.max(min, env.ENVIO_INTERVALO_MAX * 1000);
-    proximoEnvio = Date.now() + min + Math.random() * (max - min);
-  } finally {
-    enviando = false;
   }
 }
 
@@ -104,13 +112,22 @@ function seguro(nome, fn) {
   return () => fn().catch((e) => console.error(`[rotina ${nome}]`, e.message));
 }
 
+// Roda a rotina em cada condomínio, um de cada vez (o erro de um não para os outros)
+function porCondominio(nome, fn) {
+  return async () => {
+    for (const c of await listarCondominios()) {
+      await noCondominio(c.id, fn).catch((e) => console.error(`[rotina ${nome}] ${c.nome}:`, e.message));
+    }
+  };
+}
+
 function iniciar() {
   setInterval(seguro('fila', processarFila), 5000);
-  setInterval(seguro('lembretes', enviarLembretes), 60000);
-  setInterval(seguro('eventos', lembrarEventos), 5 * 60000);
-  setInterval(seguro('manutencao', verificarManutencoes), 60 * 60000);
-  setInterval(seguro('duvidas', lembrarDuvidas), 30 * 60000);
-  setTimeout(seguro('manutencao', verificarManutencoes), 15000);
+  setInterval(seguro('lembretes', porCondominio('lembretes', enviarLembretes)), 60000);
+  setInterval(seguro('eventos', porCondominio('eventos', lembrarEventos)), 5 * 60000);
+  setInterval(seguro('manutencao', porCondominio('manutencao', verificarManutencoes)), 60 * 60000);
+  setInterval(seguro('duvidas', porCondominio('duvidas', lembrarDuvidas)), 30 * 60000);
+  setTimeout(seguro('manutencao', porCondominio('manutencao', verificarManutencoes)), 15000);
   console.log('[rotinas] fila de envio, lembretes, eventos e manutenção ativos');
 }
 

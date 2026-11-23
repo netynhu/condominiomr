@@ -1,0 +1,56 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Condomínios</h1><p class="muted">Todos os condomínios atendidos pelo mesmo número de WhatsApp. Cada um tem os seus moradores, documentos, ajustes, equipe e grupo. O assistente descobre de qual prédio é cada morador pelo telefone.</p></div>
+</div>
+
+<div class="grade-equipe">
+  <div class="tabela">
+    <table>
+      <thead><tr><th>Condomínio</th><th>Moradores</th><th>Equipe</th><th>Situação</th><th></th></tr></thead>
+      <tbody>
+        <% if (!lista.length) { %><tr><td colspan="5" class="muted">Nenhum condomínio ainda. Crie o primeiro ao lado.</td></tr><% } %>
+        <% for (const c of lista) { %>
+          <tr style="<%= c.ativo ? '' : 'opacity:.55' %>">
+            <td><b><%= c.nome %></b><div class="small muted">desde <%= u.data(c.criado_em) %></div></td>
+            <td class="num"><%= c.moradores %></td>
+            <td class="num"><%= c.equipe %></td>
+            <td><span class="tag <%= c.ativo ? 'resolvido' : '' %>"><%= c.ativo ? 'Ativo' : 'Desativado' %></span></td>
+            <td>
+              <div class="acoes equipe-acoes">
+                <% if (c.ativo) { %>
+                <form method="post" action="/condominio/trocar"><input type="hidden" name="id" value="<%= c.id %>"><input type="hidden" name="voltar" value="/"><button class="btn sec peq" type="submit" <%= condominioAtual && condominioAtual.id === c.id ? 'disabled' : '' %>><%= condominioAtual && condominioAtual.id === c.id ? 'Você está nele' : 'Abrir' %></button></form>
+                <% } %>
+                <button class="btn sec peq" type="button" data-abrir="editar-<%= c.id %>">Editar</button>
+              </div>
+              <dialog class="janela" id="editar-<%= c.id %>">
+                <form class="campos" method="post" action="/condominios/<%= c.id %>">
+                  <div class="janela-topo"><h2>Editar condomínio</h2><button class="icone-btn" type="button" data-fechar aria-label="Fechar">✕</button></div>
+                  <label>Nome<input name="nome" value="<%= c.nome %>" required></label>
+                  <label class="check"><input type="checkbox" name="ativo" <%= c.ativo ? 'checked' : '' %>> Ativo (o assistente atende os moradores)</label>
+                  <div class="janela-acoes"><span style="flex:1"></span><button class="btn sec" type="button" data-fechar>Cancelar</button><button class="btn" type="submit">Salvar</button></div>
+                </form>
+              </dialog>
+            </td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <form class="card campos" method="post" action="/condominios">
+    <h2>Novo condomínio</h2>
+    <label>Nome do condomínio<input name="nome" id="nome" required placeholder="Ex.: Residencial Jardim das Acácias"></label>
+    <button class="btn" type="submit">Criar condomínio</button>
+    <p class="small muted">Depois de criar, você entra nele para configurar: ajustes do prédio, documentos (convenção e regulamento), equipe e o grupo dos moradores. O número de WhatsApp é o mesmo de todos.</p>
+  </form>
+</div>
+<script>
+document.addEventListener('click', (e) => {
+  const abrir = e.target.closest('[data-abrir]');
+  if (abrir) document.getElementById(abrir.dataset.abrir).showModal();
+  const fechar = e.target.closest('[data-fechar]');
+  if (fechar) fechar.closest('dialog').close();
+  if (e.target.tagName === 'DIALOG') e.target.close();
+});
+</script>
+<%- include('partials/rodape') %>

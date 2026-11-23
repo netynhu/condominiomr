@@ -19,9 +19,9 @@ const LOCAIS = [
 // ---------- Entrar pelo link enviado no WhatsApp ----------
 router.get('/entrar/:token', a(async (req, res) => {
   const token = String(req.params.token || '');
-  const [u] = token.length >= 32 ? ok(await db.from('usuarios').select('id, nome, perfil, ativo').eq('token_acesso', token).limit(1)) : [];
+  const [u] = token.length >= 32 ? ok(await require('../db').dbGlobal.from('usuarios').select('id, nome, perfil, ativo, dono, condominio_atual').eq('token_acesso', token).limit(1)) : [];
   if (!u || !u.ativo) return res.status(403).render('erro', { titulo: 'Link inválido', mensagem: 'Este link de acesso não vale mais. Peça um novo ao síndico.' });
-  req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil === 'sindico' ? 'admin' : u.perfil, cargo: u.perfil };
+  require('./comum').iniciarSessao(req, u);
   req.sessionOptions.maxAge = NOVENTA_DIAS; // fica conectado no celular
   res.redirect(u.perfil === 'zelador' ? '/z' : PAGINA_INICIAL[u.perfil]);
 }));

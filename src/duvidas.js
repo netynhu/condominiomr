@@ -10,8 +10,8 @@ const { normalizarTelefone, primeiroNome, rotuloUnidade } = require('./util');
 // Quem recebe o aviso de pergunta nova: o síndico das Configurações e quem é Síndico/Administração com WhatsApp
 async function telefonesDaAdministracao() {
   const cfg = await getConfig();
-  const usuarios = ok(await db.from('usuarios').select('telefone').in('perfil', ['sindico', 'admin']).eq('ativo', true).not('telefone', 'is', null));
-  return [...new Set([cfg.telefone_sindico, ...usuarios.map((u) => u.telefone)].map(normalizarTelefone).filter(Boolean))];
+  const equipe = await sv.telefonesDaEquipe(['sindico', 'admin']);
+  return [...new Set([cfg.telefone_sindico, ...equipe].map(normalizarTelefone).filter(Boolean))];
 }
 
 async function registrar({ morador, pergunta, contexto }) {

@@ -1,7 +1,7 @@
 // Assistente da administração: o síndico manda comandos pelo WhatsApp (ou pela tela "Assistente" do painel)
 // e o agente executa no sistema: avisos, agenda, chamados, moradores e resumos.
 // Regra de ouro: nada sai para os moradores sem uma prévia e um "sim" explícito.
-const { db, ok, getConfig } = require('./db');
+const { db, dbGlobal, ok, getConfig } = require('./db');
 const { env } = require('./config');
 const { openai, completar } = require('./ia');
 const sv = require('./servicos');
@@ -12,8 +12,13 @@ const HISTORICO = 20;
 async function acharAdmin(telefone) {
   const vars = variantesTelefone(telefone);
   if (!vars[0]) return null;
-  const [u] = ok(await db.from('usuarios').select('id, nome, perfil, telefone').in('telefone', vars).eq('ativo', true).in('perfil', ['admin', 'sindico']).limit(1));
-  return u || null;
+  const [u] = ok(await dbGlobal.from('usuarios').select('id, nome, perfil, telefone, dono, condominio_atual').in('telefone', vars).eq('ativo', true).in('perfil', ['admin', 'sindico']).limit(1));
+  if (!u) return null;
+  // Em qual condomínio ele está trabalhando: o escolhido por último, ou o primeiro da lista
+  u.condominios = await sv.condominiosDoUsuario(u);
+  if (!u.condominios.length) return null;
+  u.condominio_id = (u.condominios.find((c) => c.id === u.condominio_atual) || u.condominios[0]).id;
+  return u;
 }
 
 const paraISO = (s) => (!s ? null : /[zZ]|[+-]\d\d:\d\d$/.test(s) ? new Date(s).toISOString() : localParaISO(s.slice(0, 16)));
@@ -29,6 +34,7 @@ const FERRAMENTAS = [
         texto: { type: 'string', description: 'Texto claro e educado, sem saudação inicial' },
         canal: { type: 'string', enum: ['grupo', 'privado'], description: 'grupo (padrão) ou privado de cada morador' },
         bloco: { type: 'string', description: 'Só para canal privado: limitar a um bloco' },
+        com_imagem: { type: 'boolean', description: 'true quando o síndico mandou uma imagem (cartaz, comunicado) para ir junto no grupo. Só funciona no canal grupo.' },
       },
       required: ['titulo', 'texto'],
     },
@@ -116,6 +122,11 @@ const FERRAMENTAS = [
     },
   },
   {
+    name: 'trocar_condominio',
+    description: 'Troca o condomínio em que você está trabalhando com o síndico (quando ele administra mais de um). Use quando ele pedir para falar de outro prédio.',
+    parameters: { type: 'object', properties: { nome: { type: 'string', description: 'Nome (ou parte do nome) do condomínio' } }, required: ['nome'] },
+  },
+  {
     name: 'resumo_do_predio',
     description: 'Gera o resumo do dia ou responde a uma pergunta sobre os dados do prédio (chamados, reclamações, agenda, manutenção, grupo).',
     parameters: { type: 'object', properties: { pergunta: { type: 'string', description: 'Vazio para o resumo do dia' } } },
@@ -137,22 +148,26 @@ async function executar(nome, args, ctx) {
     case 'preparar_aviso': {
       const canal = args.canal === 'privado' ? 'privado' : 'grupo';
       const publico = canal === 'privado' && args.bloco ? `bloco:${String(args.bloco).trim().toUpperCase()}` : 'todos';
-      const av = ok(await db.from('avisos').insert({ titulo: args.titulo, texto: args.texto, canal, publico, criado_por: `${admin.nome} (WhatsApp)` }).select().single());
+      if (args.com_imagem && !ctx.foto) return { ok: false, erro: 'Não recebi a imagem. Peça para o síndico mandar a imagem de novo, junto com o pedido.' };
+      if (args.com_imagem && canal !== 'grupo') return { ok: false, erro: 'Aviso com imagem só pode ir para o grupo.' };
+      const dados = { titulo: args.titulo, texto: args.texto, canal, publico, criado_por: `${admin.nome} (WhatsApp)` };
+      if (args.com_imagem) { dados.imagem = ctx.foto; ctx.limparMidia?.(); }
+      const av = ok(await db.from('avisos').insert(dados).select().single());
       const cfg = await getConfig();
       const previa = canal === 'grupo'
         ? `📢 *${av.titulo}*\n\n${av.texto}\n\n_${cfg.nome_predio} · Administração_`
         : `Olá, (nome)!\n\n${av.titulo}\n\n${av.texto}`;
       ctx.avisoPreparado = av.id;
-      return { aviso_id: av.id, canal, destino: canal === 'grupo' ? `grupo ${cfg.grupo_nome || '(nenhum grupo configurado!)'}` : (publico === 'todos' ? 'privado de todos os moradores' : `privado do bloco ${publico.slice(6)}`), previa };
+      return { aviso_id: av.id, canal, com_imagem: Boolean(av.imagem), destino: canal === 'grupo' ? `grupo ${cfg.grupo_nome || '(nenhum grupo configurado!)'}` : (publico === 'todos' ? 'privado de todos os moradores' : `privado do bloco ${publico.slice(6)}`), previa };
     }
     case 'enviar_aviso_confirmado': {
       const av = ok(await db.from('avisos').select('*').eq('id', args.aviso_id).maybeSingle());
       if (!av || av.status !== 'rascunho') return { ok: false, erro: 'Aviso não encontrado ou já enviado.' };
       if (Date.now() - new Date(av.criado_em).getTime() > 2 * 3600000) return { ok: false, erro: 'Rascunho antigo. Prepare de novo.' };
       if (av.canal === 'grupo') {
-        await sv.postarNoGrupo(av.titulo, av.texto);
+        await sv.postarNoGrupo(av.titulo, av.texto, av.imagem);
         ok(await db.from('avisos').update({ status: 'enviado', total: 1, enviado_em: new Date().toISOString() }).eq('id', av.id));
-        return { ok: true, enviado: 'postado no grupo' };
+        return { ok: true, enviado: av.imagem ? 'postado no grupo com a imagem' : 'postado no grupo' };
       }
       const total = await sv.enfileirar(av.publico, `${av.titulo}\n\n${av.texto}`, av.id);
       ok(await db.from('avisos').update({ status: total ? 'enviando' : 'enviado', total }).eq('id', av.id));
@@ -193,7 +208,7 @@ async function executar(nome, args, ctx) {
     case 'cadastrar_morador': {
       const telefone = normalizarTelefone(args.telefone);
       if (telefone.length < 12) return { ok: false, erro: 'Telefone inválido: precisa do DDD.' };
-      const m = ok(await db.from('moradores').upsert({ nome: args.nome, telefone, vaga: args.vaga || null, unidade_id: await unidadeId(args.bloco, args.apartamento) }, { onConflict: 'telefone' }).select('*, unidade:unidades(*)').single());
+      const m = ok(await db.from('moradores').upsert({ nome: args.nome, telefone, vaga: args.vaga || null, unidade_id: await unidadeId(args.bloco, args.apartamento) }, { onConflict: 'condominio_id,telefone' }).select('*, unidade:unidades(*)').single());
       await db.from('contatos_pendentes').delete().eq('telefone', telefone);
       let boasVindas = false;
       try { boasVindas = await sv.boasVindas(m); } catch (e) { console.error('[admin] boas-vindas', e.message); }
@@ -210,6 +225,14 @@ async function executar(nome, args, ctx) {
       const r = await responder(Number(args.numero), args.resposta, { ensinar: args.ensinar !== false, usuarioNome: admin.nome });
       return { ok: true, numero: r.duvida.id, morador_recebeu: r.enviado, assistente_aprendeu: r.duvida.ensinar };
     }
+    case 'trocar_condominio': {
+      const lista = admin.condominios || [];
+      const busca = String(args.nome || '').toLowerCase();
+      const alvo = lista.find((c) => c.nome.toLowerCase() === busca) || lista.find((c) => c.nome.toLowerCase().includes(busca));
+      if (!alvo) return { ok: false, erro: `Não encontrei esse condomínio. Os dele são: ${lista.map((c) => c.nome).join(', ')}.` };
+      ok(await dbGlobal.from('usuarios').update({ condominio_atual: alvo.id }).eq('id', admin.id));
+      return { ok: true, agora_trabalhando_em: alvo.nome, observacao: 'Vale a partir da próxima mensagem do síndico.' };
+    }
     case 'resumo_do_predio': {
       const { panorama } = require('./rotas/inteligencia');
       const dados = await panorama();
@@ -225,13 +248,14 @@ async function sistema(admin, canal = 'whatsapp') {
   const cfg = await getConfig();
   return `Você é o assistente da administração do ${cfg.nome_predio}. Quem fala com você é ${admin.nome}, da administração (síndico/gestão), não um morador.
 Hoje: ${hojeParaIA()}. Use isso para entender "amanhã", "terça", "dia 25" (sempre a próxima ocorrência a partir de hoje, no ano certo). Ao confirmar, escreva a data por extenso com o dia da semana.
+Condomínio em que você está trabalhando agora: ${cfg.nome_predio}.${(admin.condominios || []).length > 1 ? ` ${admin.nome} administra: ${admin.condominios.map((c) => c.nome).join(', ')}. Se ele pedir algo de outro prédio, use trocar_condominio e peça para repetir o pedido.` : ''}
 Grupo dos moradores configurado: ${cfg.grupo_nome || 'nenhum'}.
 ${canal === 'painel' ? 'Você está na tela Assistente do painel (sistema logado): pode cadastrar moradores.' : 'Você está no WhatsApp. Cadastro de moradores NÃO é feito por aqui: se pedirem, explique que o cadastro é só no painel, na página Moradores ou na tela Assistente.'}
 
 COMO TRABALHAR
 - Respostas curtas, próprias de WhatsApp. Sem markdown pesado.
 - Execute os pedidos com as ferramentas. Se faltar algo essencial (data, horário), pergunte uma coisa só.
-- AVISOS: sempre use preparar_aviso, mostre a prévia exatamente como vai sair e pergunte "Posso enviar?". Só chame enviar_aviso_confirmado depois de um sim claro para aquele aviso. Se o síndico pedir mudança, prepare um novo rascunho.
+- AVISOS: sempre use preparar_aviso, mostre a prévia exatamente como vai sair e pergunte "Posso enviar?". Se o síndico mandou uma imagem (aparece como "[o morador enviou uma foto...]") e quer postar no grupo, use com_imagem=true e diga na prévia que a imagem vai junto. Só chame enviar_aviso_confirmado depois de um sim claro para aquele aviso. Se o síndico pedir mudança, prepare um novo rascunho.
 - Pedido de "aviso de manutenção/obra/reunião numa data": crie o evento na agenda (criar_evento) E prepare o aviso para o grupo, mostrando a prévia.
 - Ao atualizar chamado, confirme o número e o novo status.
 - Reclamações: nunca tente descobrir quem reclamou.
@@ -250,7 +274,7 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
     { role: 'user', content: texto },
   ];
   const SO_NO_PAINEL = ['cadastrar_morador'];
-  const tools = FERRAMENTAS.filter((f) => ctx.canal === 'painel' || !SO_NO_PAINEL.includes(f.name)).map((f) => ({ type: 'function', function: f }));
+  const tools = FERRAMENTAS.filter((f) => (ctx.canal === 'painel' ? f.name !== 'trocar_condominio' : !SO_NO_PAINEL.includes(f.name))).map((f) => ({ type: 'function', function: f }));
   for (let volta = 0; volta < 8; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.2 });
     const msg = r.choices[0].message;
@@ -269,10 +293,10 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
 }
 
 // Mensagem da administração pelo WhatsApp
-async function atenderAdminWhatsApp(admin, tel, texto) {
+async function atenderAdminWhatsApp(admin, tel, texto, midia = {}) {
   ok(await db.from('mensagens').insert({ telefone: tel, direcao: 'entrada', texto }));
   let resposta;
-  const ctx = { admin };
+  const ctx = { admin, foto: midia.foto || null, limparMidia: midia.limpar };
   try { resposta = await responderAdmin(admin, tel, texto, ctx); } catch (e) {
     console.error('[admin] erro', e.message);
     resposta = 'Tive um problema técnico para executar. Tente de novo ou use o painel.';

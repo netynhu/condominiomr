@@ -9,7 +9,14 @@
     <form class="card campos" method="post" action="/avisos" id="form-aviso">
       <h2>Novo aviso</h2>
       <label>Título<input name="titulo" id="titulo" required placeholder="Limpeza da caixa d'água"></label>
-      <label>Texto<textarea name="texto" id="texto" required placeholder="Use {nome} para escrever o nome do morador. Sem {nome}, o sistema começa com &quot;Olá, nome!&quot;."></textarea></label>
+      <label>Texto<textarea name="texto" id="texto" placeholder="Use {nome} para escrever o nome do morador. Sem {nome}, o sistema começa com &quot;Olá, nome!&quot;."></textarea></label>
+      <div class="campos" style="gap:8px">
+        <span class="small" style="font-weight:600">Imagem (opcional, só no grupo)</span>
+        <label class="btn sec" style="align-self:flex-start;cursor:pointer"><input type="file" id="arquivo-imagem" accept="image/*" hidden><span id="texto-imagem">Escolher imagem</span></label>
+        <img id="previa-imagem" alt="Prévia da imagem do aviso" hidden style="max-width:260px;border-radius:10px;border:1px solid var(--line)">
+        <input type="hidden" name="imagem" id="imagem">
+        <p class="small muted">Ex.: o cartaz da festa junina ou o comunicado da administradora. A imagem vai no grupo com o título e o texto como legenda.</p>
+      </div>
       <div class="linha-campos">
         <label class="check" style="border:1px solid var(--line);border-radius:10px;padding:12px"><input type="radio" name="canal" value="grupo" checked> <span><b>Postar no grupo</b><br><span class="small muted">Uma mensagem só, no grupo dos moradores<%= cfg.grupo_nome ? ` (${cfg.grupo_nome})` : '' %>. Recomendado.</span></span></label>
         <label class="check" style="border:1px solid var(--line);border-radius:10px;padding:12px"><input type="radio" name="canal" value="privado"> <span><b>No privado de cada um</b><br><span class="small muted">Para um bloco só ou assunto reservado. Sai aos poucos.</span></span></label>
@@ -33,7 +40,7 @@
         <% for (const av of lista) { %>
           <div class="item">
             <div><b><%= av.titulo %></b> <span class="tag <%= av.status %>"><%= rot[av.status] %></span>
-              <div class="small muted"><%= av.canal === 'grupo' ? 'No grupo' : 'No privado · ' + (av.publico === 'todos' ? 'todos' : 'bloco ' + av.publico.slice(6)) %> ·<%= u.dataHora(av.criado_em) %> · <%= av.criado_por || '' %></div>
+              <div class="small muted"><%= av.imagem ? '🖼️ ' : '' %><%= av.canal === 'grupo' ? 'No grupo' : 'No privado · ' + (av.publico === 'todos' ? 'todos' : 'bloco ' + av.publico.slice(6)) %> ·<%= u.dataHora(av.criado_em) %> · <%= av.criado_por || '' %></div>
               <% if (av.status !== 'rascunho' && av.canal !== 'grupo') { %><div class="small"><%= av.enviados %> de <%= av.total %> entregues ao WhatsApp<%= av.erros ? `, ${av.erros} com erro` : '' %></div><% } %>
             </div>
             <% if (av.status === 'rascunho') { %>
@@ -82,5 +89,14 @@ document.getElementById('btn-ia').addEventListener('click', (e) => ocupado(e.tar
     const el = document.getElementById('notificacao'); el.hidden = false; el.textContent = (r.titulo ? r.titulo + '\n\n' : '') + r.texto;
   }
 }));
+</script>
+<script src="/static/foto.js?v=2"></script>
+<script>
+ligarFoto('arquivo-imagem', 'previa-imagem', 'texto-imagem', (dados) => {
+  document.getElementById('imagem').value = dados;
+  // Imagem só vai no grupo
+  const grupo = document.querySelector('input[name=canal][value=grupo]');
+  if (grupo) { grupo.checked = true; grupo.dispatchEvent(new Event('change', { bubbles: true })); }
+});
 </script>
 <%- include('partials/rodape') %>
