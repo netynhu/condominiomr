@@ -1,0 +1,32 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Visão geral</h1><p class="muted"><%= cards.length %> condomínios. Os que mais pedem atenção aparecem primeiro. Os alertas de todos chegam no seu WhatsApp, cada um começando com o nome do prédio.</p></div>
+</div>
+
+<div class="cartoes-condominio">
+  <% for (const c of cards) { const tudoCerto = !c.urgentes && !c.reclamacoes && !c.duvidas && !c.paradas && !c.manutVencidas; %>
+    <div class="card">
+      <div class="acoes" style="justify-content:space-between;align-items:flex-start">
+        <div><h2><%= c.nome %></h2><div class="small muted"><%= c.moradores %> moradores<%= c.reservasHoje ? ' · ' + c.reservasHoje + ' reserva(s) hoje' : '' %></div></div>
+        <span class="tag <%= tudoCerto ? 'resolvido' : (c.urgentes ? 'urgente' : 'alta') %>"><%= tudoCerto ? 'Em dia' : 'Pede atenção' %></span>
+      </div>
+      <div class="indicadores">
+        <% for (const [n, rotulo, alerta, destino] of [
+          [c.abertos, 'chamados abertos', c.urgentes, '/chamados'],
+          [c.reclamacoes, 'reclamações novas', c.reclamacoes, '/reclamacoes'],
+          [c.duvidas, 'dúvidas sem resposta', c.duvidas, '/duvidas'],
+          [c.encomendas, 'encomendas na portaria', c.paradas, '/encomendas'],
+          [c.manutVencidas, 'manutenções vencidas', c.manutVencidas, '/manutencoes'],
+        ]) { %>
+          <form method="post" action="/condominio/trocar" class="indicador <%= alerta ? 'atencao' : '' %>">
+            <input type="hidden" name="id" value="<%= c.id %>"><input type="hidden" name="voltar" value="<%= destino %>">
+            <button type="submit"><b><%= n %></b><span><%= rotulo %></span></button>
+          </form>
+        <% } %>
+      </div>
+      <% if (c.urgentes || c.paradas) { %><p class="small" style="margin:0;color:var(--warn)"><%= [c.urgentes ? c.urgentes + ' chamado(s) urgente(s) ou de prioridade alta' : '', c.paradas ? c.paradas + ' encomenda(s) parada(s) além do prazo' : ''].filter(Boolean).join(' · ') %></p><% } %>
+      <form method="post" action="/condominio/trocar"><input type="hidden" name="id" value="<%= c.id %>"><input type="hidden" name="voltar" value="/"><button class="btn sec" type="submit" style="width:100%">Abrir <%= c.nome %></button></form>
+    </div>
+  <% } %>
+</div>
+<%- include('partials/rodape') %>

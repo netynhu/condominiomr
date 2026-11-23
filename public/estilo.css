@@ -222,3 +222,14 @@ hr{border:0;border-top:1px solid var(--line);width:100%;margin:0}
 
 /* Elemento escondido continua escondido mesmo com classe de botão */
 [hidden]{display:none!important}
+
+/* ---------- Visão geral (todos os condomínios) ---------- */
+.cartoes-condominio{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.indicadores{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.indicador button{width:100%;text-align:left;font:inherit;background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px;color:var(--ink)}
+.indicador button:hover{border-color:var(--line-2)}
+.indicador b{font-size:1.4rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.indicador span{font-size:.75rem;color:var(--muted)}
+.indicador.atencao button{background:var(--warn-soft);border-color:var(--warn-line)}
+.indicador.atencao b{color:var(--warn)}
+@media (max-width:520px){.cartoes-condominio{grid-template-columns:1fr}}

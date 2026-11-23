@@ -212,7 +212,27 @@ router.post('/agenda/:id/excluir', exigir('admin'), a(async (req, res) => {
 router.get('/manutencoes', exigir('admin'), a(async (req, res) => {
   const lista = ok(await db.from('manutencoes').select('*').order('proxima_data'));
   const editar = req.query.editar ? lista.find((m) => m.id === req.query.editar) : null;
-  res.render('manutencoes', { titulo: 'Manutenção preventiva', lista, editar });
+  const h = await db.from('manutencao_registros').select('*').order('feita_em', { ascending: false }).order('criado_em', { ascending: false }).limit(100);
+  const historico = h.error ? null : h.data; // null: falta a migração 013
+  // Última vez que cada item programado foi feito
+  for (const m of lista) m.ultima = historico?.find((r) => r.manutencao_id === m.id) || null;
+  res.render('manutencoes', { titulo: 'Manutenção', lista, editar, historico });
+}));
+
+// Registra uma manutenção feita (de um item programado ou avulsa). Se for de um item programado, agenda a próxima.
+router.post('/manutencoes/registro', exigir('admin'), a(async (req, res) => {
+  const r = await require('../manutencoes').registrar({
+    manutencaoId: req.body.manutencao_id || null, titulo: req.body.titulo, feitaEm: req.body.feita_em,
+    empresa: req.body.empresa, observacao: req.body.observacao, por: req.session.usuario.nome,
+  });
+  avisar(req, r.erro || `Registrado: ${r.titulo} em ${r.feitaEm.split('-').reverse().join('/')}.${r.proxima ? ` Próxima: ${r.proxima.split('-').reverse().join('/')}.` : ''} O assistente já responde aos moradores com essa informação.`, r.erro ? 'erro' : 'ok');
+  res.redirect('/manutencoes');
+}));
+
+router.post('/manutencoes/registro/:id/excluir', exigir('admin'), a(async (req, res) => {
+  ok(await db.from('manutencao_registros').delete().eq('id', req.params.id));
+  avisar(req, 'Registro apagado do histórico.');
+  res.redirect('/manutencoes');
 }));
 
 router.post('/manutencoes', exigir('admin'), a(async (req, res) => {
@@ -228,15 +248,7 @@ router.post('/manutencoes', exigir('admin'), a(async (req, res) => {
   res.redirect('/manutencoes');
 }));
 
-// Marca como feita e agenda a próxima
-router.post('/manutencoes/:id/feita', exigir('admin'), a(async (req, res) => {
-  const m = ok(await db.from('manutencoes').select('*').eq('id', req.params.id).single());
-  const base = new Date(); // conta a partir de hoje
-  const prox = new Date(base.getTime() + m.periodicidade_dias * 86400000).toISOString().slice(0, 10);
-  ok(await db.from('manutencoes').update({ proxima_data: prox, alerta_enviado_para: null }).eq('id', m.id));
-  avisar(req, `${m.titulo}: próxima em ${prox.split('-').reverse().join('/')}.`);
-  res.redirect('/manutencoes');
-}));
+
 
 router.post('/manutencoes/:id/excluir', exigir('admin'), a(async (req, res) => {
   ok(await db.from('manutencoes').delete().eq('id', req.params.id));

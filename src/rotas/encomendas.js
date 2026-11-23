@@ -11,11 +11,15 @@ const equipe = exigir('admin', 'portaria');
 
 router.get('/encomendas', equipe, a(async (req, res) => {
   const r = await db.from('encomendas').select('*, unidade:unidades(bloco, numero)').order('recebida_em', { ascending: false }).limit(200);
-  if (r.error) return res.render('encomendas', { titulo: 'Encomendas', aguardando: [], recentes: [], semTabela: true, prazo: 7 });
   const cfg = await getConfig();
-  const aguardando = r.data.filter((e) => e.status === 'aguardando').reverse(); // mais antigas primeiro
-  const recentes = r.data.filter((e) => e.status !== 'aguardando').slice(0, 25);
-  res.render('encomendas', { titulo: 'Encomendas', aguardando, recentes, semTabela: false, prazo: Number(cfg.encomenda_prazo_dias) || 7 });
+  const aguardando = r.error ? [] : r.data.filter((e) => e.status === 'aguardando').reverse(); // mais antigas primeiro
+  const recentes = r.error ? [] : r.data.filter((e) => e.status !== 'aguardando').slice(0, 25);
+  // Portaria: tela de app no celular, simples (foto, apartamento, avisar)
+  if (req.session.usuario.perfil === 'portaria') {
+    const usaBlocos = lerUnidadesValidas(cfg.unidades_validas).some((x) => x.bloco);
+    return res.render('portaria', { titulo: 'Encomendas', aguardando, semTabela: Boolean(r.error), usaBlocos });
+  }
+  res.render('encomendas', { titulo: 'Encomendas', aguardando, recentes, semTabela: Boolean(r.error), prazo: Number(cfg.encomenda_prazo_dias) || 7 });
 }));
 
 router.post('/encomendas', equipe, a(async (req, res) => {

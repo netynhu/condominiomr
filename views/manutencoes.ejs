@@ -1,42 +1,98 @@
 <%- include('partials/topo') %>
-<% const e = editar || {}; const hoje = u.agoraBR().dataISO; %>
+<% const e = editar || {}; const hoje = u.agoraBR().dataISO; const br = (d) => d.split('-').reverse().join('/'); %>
 <div class="cabeca">
-  <div><h1>Manutenção preventiva</h1><p class="muted">Quando o prazo se aproxima, o sistema abre um chamado e avisa o síndico no WhatsApp.</p></div>
+  <div><h1>Manutenção</h1><p class="muted">O que está programado e o histórico do que foi feito. O assistente usa o histórico para responder aos moradores, por exemplo: "quando foi a última limpeza da caixa d'água?".</p></div>
 </div>
+
+<% if (historico === null) { %><div class="alerta" style="margin-bottom:16px">Falta rodar a migração <code>013_manutencao_registros.sql</code> no SQL do Supabase para guardar o histórico.</div><% } %>
 
 <div class="grade2">
-  <div class="tabela">
-    <table>
-      <thead><tr><th>Item</th><th>Próxima</th><th>A cada</th><th></th></tr></thead>
-      <tbody>
-        <% if (!lista.length) { %><tr><td colspan="4" class="muted">Cadastre os itens: elevador, extintores, caixa d'água, dedetização, AVCB, seguro, para-raios, bombas.</td></tr><% } %>
-        <% for (const m of lista) { const diasFalta = Math.round((new Date(m.proxima_data) - new Date(hoje)) / 86400000); %>
-          <tr>
-            <td><b><%= m.titulo %></b><% if (m.descricao) { %><div class="small muted"><%= m.descricao %></div><% } %></td>
-            <td class="num"><%= m.proxima_data.split('-').reverse().join('/') %><div><span class="tag <%= diasFalta < 0 ? 'urgente' : (diasFalta <= m.antecedencia_dias ? 'alta' : '') %>"><%= diasFalta < 0 ? 'vencida' : diasFalta === 0 ? 'hoje' : `em ${diasFalta} dias` %></span></div></td>
-            <td class="num"><%= m.periodicidade_dias %> dias</td>
-            <td><div class="acoes">
-              <form method="post" action="/manutencoes/<%= m.id %>/feita" data-confirmar="Marcar como feita hoje e agendar a próxima?"><button class="btn peq" type="submit">Feita</button></form>
-              <a class="btn sec peq" href="/manutencoes?editar=<%= m.id %>">Editar</a>
-              <form method="post" action="/manutencoes/<%= m.id %>/excluir" data-confirmar="Excluir este item?"><button class="btn sec peq" type="submit">Excluir</button></form>
-            </div></td>
-          </tr>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="tabela">
+      <table>
+        <thead><tr><th>Programada</th><th>Última vez</th><th>Próxima</th><th></th></tr></thead>
+        <tbody>
+          <% if (!lista.length) { %><tr><td colspan="4" class="muted">Cadastre os itens: elevador, extintores, caixa d'água, dedetização, AVCB, seguro, para-raios, bombas.</td></tr><% } %>
+          <% for (const m of lista) { const diasFalta = Math.round((new Date(m.proxima_data) - new Date(hoje)) / 86400000); %>
+            <tr>
+              <td><b><%= m.titulo %></b><div class="small muted">a cada <%= m.periodicidade_dias %> dias<%= m.descricao ? ' · ' + m.descricao : '' %></div></td>
+              <td class="small"><%= m.ultima ? br(m.ultima.feita_em) + (m.ultima.empresa ? ' · ' + m.ultima.empresa : '') : '—' %></td>
+              <td class="num"><%= br(m.proxima_data) %><div><span class="tag <%= diasFalta < 0 ? 'urgente' : (diasFalta <= m.antecedencia_dias ? 'alta' : '') %>"><%= diasFalta < 0 ? 'vencida' : diasFalta === 0 ? 'hoje' : `em ${diasFalta} dias` %></span></div></td>
+              <td><div class="acoes equipe-acoes">
+                <button class="btn peq" type="button" data-abrir="feita-<%= m.id %>">Feita</button>
+                <a class="btn sec peq" href="/manutencoes?editar=<%= m.id %>">Editar</a>
+                <form method="post" action="/manutencoes/<%= m.id %>/excluir" data-confirmar="Excluir este item da programação? O histórico continua."><button class="btn sec peq" type="submit">Excluir</button></form>
+              </div>
+              <dialog class="janela" id="feita-<%= m.id %>">
+                <form class="campos" method="post" action="/manutencoes/registro">
+                  <div class="janela-topo"><h2><%= m.titulo %>: feita</h2><button class="icone-btn" type="button" data-fechar aria-label="Fechar">✕</button></div>
+                  <input type="hidden" name="manutencao_id" value="<%= m.id %>">
+                  <div class="linha-campos">
+                    <label>Feita em<input type="date" name="feita_em" value="<%= hoje %>" max="<%= hoje %>" required></label>
+                    <label>Empresa ou responsável<input name="empresa" placeholder="Ex.: Hidro Limp"></label>
+                  </div>
+                  <label>Observação<input name="observacao" placeholder="Ex.: laudo entregue, próxima visita marcada"></label>
+                  <p class="small muted">Fica no histórico, e a próxima é agendada para <%= m.periodicidade_dias %> dias depois dessa data.</p>
+                  <div class="janela-acoes"><span style="flex:1"></span><button class="btn sec" type="button" data-fechar>Cancelar</button><button class="btn" type="submit">Registrar</button></div>
+                </form>
+              </dialog>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Histórico do que foi feito</h2>
+      <% if (historico && !historico.length) { %><p class="muted">Nada registrado ainda. Use o botão "Feita" ou registre ao lado (dá para registrar manutenções antigas, com a data em que foram feitas).</p><% } %>
+      <div class="lista">
+        <% for (const r of historico || []) { %>
+          <div class="item">
+            <div><b><%= r.titulo %></b> <span class="small muted">· <%= br(r.feita_em) %></span>
+              <div class="small muted"><%= [r.empresa, r.observacao].filter(Boolean).join(' · ') || 'sem detalhes' %><%= r.registrada_por ? ' · registrado por ' + r.registrada_por : '' %></div></div>
+            <form method="post" action="/manutencoes/registro/<%= r.id %>/excluir" data-confirmar="Apagar este registro do histórico?"><button class="btn sec peq" type="submit">Apagar</button></form>
+          </div>
         <% } %>
-      </tbody>
-    </table>
+      </div>
+    </div>
   </div>
 
-  <form class="card campos" method="post" action="/manutencoes">
-    <h2><%= editar ? 'Editar item' : 'Novo item' %></h2>
-    <input type="hidden" name="id" value="<%= e.id || '' %>">
-    <label>Item<input name="titulo" id="titulo" value="<%= e.titulo || '' %>" required placeholder="Recarga dos extintores"></label>
-    <label>Detalhes<input name="descricao" id="descricao" value="<%= e.descricao || '' %>" placeholder="Fornecedor, contrato, observações"></label>
-    <div class="linha-campos">
-      <label>Próxima data<input type="date" name="proxima_data" id="proxima_data" value="<%= e.proxima_data || '' %>" required></label>
-      <label>Repetir a cada (dias)<input type="number" name="periodicidade_dias" id="periodicidade_dias" min="1" value="<%= e.periodicidade_dias || 365 %>"></label>
-      <label>Avisar com antecedência (dias)<input type="number" name="antecedencia_dias" id="antecedencia_dias" min="0" value="<%= e.antecedencia_dias || 15 %>"></label>
-    </div>
-    <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/manutencoes">Cancelar</a><% } %></div>
-  </form>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <form class="card campos" method="post" action="/manutencoes/registro">
+      <h2>Registrar manutenção feita</h2>
+      <label>O que foi feito<input name="titulo" required placeholder="Ex.: Limpeza da caixa d'água"></label>
+      <div class="linha-campos">
+        <label>Feita em<input type="date" name="feita_em" value="<%= hoje %>" max="<%= hoje %>" required></label>
+        <label>Empresa ou responsável<input name="empresa" placeholder="Ex.: Hidro Limp"></label>
+      </div>
+      <label>Observação<input name="observacao" placeholder="Ex.: laudo de potabilidade aprovado"></label>
+      <button class="btn" type="submit">Registrar</button>
+      <p class="small muted">Para itens programados, use o botão "Feita" na tabela: ele também agenda a próxima.</p>
+    </form>
+
+    <form class="card campos" method="post" action="/manutencoes">
+      <h2><%= editar ? 'Editar item programado' : 'Programar manutenção' %></h2>
+      <input type="hidden" name="id" value="<%= e.id || '' %>">
+      <label>Item<input name="titulo" id="titulo" value="<%= e.titulo || '' %>" required placeholder="Recarga dos extintores"></label>
+      <label>Detalhes<input name="descricao" id="descricao" value="<%= e.descricao || '' %>" placeholder="Fornecedor, contrato, observações"></label>
+      <div class="linha-campos">
+        <label>Próxima data<input type="date" name="proxima_data" id="proxima_data" value="<%= e.proxima_data || '' %>" required></label>
+        <label>Repetir a cada (dias)<input type="number" name="periodicidade_dias" id="periodicidade_dias" min="1" value="<%= e.periodicidade_dias || 365 %>"></label>
+        <label>Avisar antes (dias)<input type="number" name="antecedencia_dias" id="antecedencia_dias" min="0" value="<%= e.antecedencia_dias || 15 %>"></label>
+      </div>
+      <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/manutencoes">Cancelar</a><% } %></div>
+      <p class="small muted">Quando o prazo se aproxima, o sistema abre um chamado e avisa o síndico no WhatsApp.</p>
+    </form>
+  </div>
 </div>
+<script>
+document.addEventListener('click', (ev) => {
+  const abrir = ev.target.closest('[data-abrir]');
+  if (abrir) document.getElementById(abrir.dataset.abrir).showModal();
+  const fechar = ev.target.closest('[data-fechar]');
+  if (fechar) fechar.closest('dialog').close();
+  if (ev.target.tagName === 'DIALOG') ev.target.close();
+});
+</script>
 <%- include('partials/rodape') %>

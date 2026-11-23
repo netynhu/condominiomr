@@ -45,9 +45,19 @@ async function telefonesDaEquipe(perfis) {
 
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
 // rotulo: para quem é a mensagem (zelador, síndico...); hoje só informativo.
+// Alertas para a equipe começam com o nome do prédio: o mesmo síndico (ou o mesmo número) pode atender vários condomínios
+const PARA_EQUIPE = new Set(['síndico', 'zelador', 'portaria']);
+async function comNomeDoPredio(texto, rotulo) {
+  if (!PARA_EQUIPE.has(rotulo) || !condominioAtual() || String(texto).startsWith('🏢')) return texto;
+  const cfg = await getConfig();
+  return `🏢 *${cfg.nome_predio}*
+${texto}`;
+}
+
 async function enviar(telefone, texto, moradorId, rotulo) {
   const tel = normalizarTelefone(telefone);
   if (!tel) return false;
+  texto = await comNomeDoPredio(texto, rotulo);
   try {
     const r = await uazapi.enviarTexto(tel, texto);
     await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto, wa_id: uazapi.idEnviado(r) });
@@ -63,6 +73,7 @@ async function enviar(telefone, texto, moradorId, rotulo) {
 async function enviarBotoes(telefone, texto, escolhas, { tipo = 'button', rodape = '', botaoLista, planoB = '', moradorId, rotulo } = {}) {
   const tel = normalizarTelefone(telefone);
   if (!tel) return false;
+  texto = await comNomeDoPredio(texto, rotulo);
   try {
     const r = await uazapi.enviarMenu(tel, texto, escolhas, { tipo, rodape, botaoLista });
     await inserirMensagem({ morador_id: moradorId || null, telefone: tel, direcao: 'saida', texto: `${texto}\n[botões: ${escolhas.map((e) => e.split('|')[0]).join(' / ')}]`, wa_id: uazapi.idEnviado(r) });
@@ -73,20 +84,25 @@ async function enviarBotoes(telefone, texto, escolhas, { tipo = 'button', rodape
   }
 }
 
-// Avisa síndico, zelador ou portaria pelo WhatsApp, se o telefone estiver configurado
-async function avisarEquipe(papel, texto) {
-  const cfg = await getConfig();
-  const tel = cfg[`telefone_${papel}`];
-  if (!tel) return false;
-  return enviar(tel, texto, null, papel === 'sindico' ? 'síndico' : papel);
+// Quem recebe os alertas de cada papel: o WhatsApp de quem está em Equipe e acessos com aquele perfil.
+// Síndico: perfil Síndico (sem nenhum, a Administração). O telefone antigo dos Ajustes só vale
+// enquanto o condomínio ainda não tem ninguém cadastrado com aquele perfil.
+async function telefonesDoPapel(papel) {
+  const perfis = { sindico: ['sindico'], zelador: ['zelador'], portaria: ['portaria'] }[papel] || [papel];
+  let tels = await telefonesDaEquipe(perfis);
+  if (!tels.length && papel === 'sindico') tels = await telefonesDaEquipe(['admin']);
+  if (!tels.length) { const cfg = await getConfig(); tels = [cfg[`telefone_${papel}`]]; }
+  return [...new Set(tels.map(normalizarTelefone).filter(Boolean))];
 }
 
-// Todos os telefones de zelador: o do painel de ajustes e os dos usuários com perfil zelador
-async function telefonesZeladores() {
-  const cfg = await getConfig();
-  const equipe = await telefonesDaEquipe(['zelador']);
-  return [...new Set([cfg.telefone_zelador, ...equipe].map(normalizarTelefone).filter(Boolean))];
+// Avisa síndico, zelador ou portaria pelo WhatsApp. "exceto": telefones que já receberam a mesma mensagem.
+async function avisarEquipe(papel, texto, { exceto = [] } = {}) {
+  const tels = (await telefonesDoPapel(papel)).filter((t) => !exceto.includes(t));
+  for (const t of tels) await enviar(t, texto, null, papel === 'sindico' ? 'síndico' : papel);
+  return tels;
 }
+
+const telefonesZeladores = () => telefonesDoPapel('zelador');
 
 async function registrarHistoricoChamado(chamadoId, acao, usuarioNome) {
   await db.from('chamado_historico').insert({ chamado_id: chamadoId, acao, usuario_nome: usuarioNome || 'Assistente' });
@@ -228,17 +244,19 @@ async function registrarReclamacao({ morador, tipo, unidade_alvo, vaga_alvo, des
   const alvo = unidade_alvo ? `Unidade: ${unidade_alvo}\n` : '';
   const msg = `📣 Reclamação nº ${r.id}${acontecendo_agora ? ' · ACONTECENDO AGORA' : ''}\nTipo: ${tipo}\n${alvo}${descricao}\nQuem reclamou fica protegido. Veja no painel.`;
   const cfg = await getConfig();
-  await avisarEquipe('portaria', msg);
+  const portaria = await avisarEquipe('portaria', msg);
 
   // O síndico decide em Ajustes: todas as reclamações, só reincidência (a partir de N em 30 dias) ou nenhuma
   const modo = cfg.sindico_reclamacoes || 'todas';
   const minimo = Math.max(2, Number(cfg.sindico_reincidencia_minima) || 3);
   const reincidente = reincidencia >= minimo;
-  const mesmoNumero = normalizarTelefone(cfg.telefone_sindico) === normalizarTelefone(cfg.telefone_portaria);
   const alerta = reincidente ? `\n\n⚠️ Reincidência: ${reincidencia} reclamações contra a unidade ${unidade_alvo} nos últimos 30 dias. Vale avaliar uma notificação formal.` : '';
-  if (cfg.telefone_sindico && modo !== 'nenhuma') {
-    if (modo === 'todas' && !mesmoNumero) await avisarEquipe('sindico', msg + alerta);
-    else if (reincidente) await avisarEquipe('sindico', mesmoNumero && modo === 'todas' ? alerta.trim() : msg + alerta);
+  if (modo === 'todas') {
+    await avisarEquipe('sindico', msg + alerta, { exceto: portaria });
+    // Quem é portaria e síndico ao mesmo tempo já recebeu a reclamação: só o alerta de reincidência
+    if (reincidente) for (const t of (await telefonesDoPapel('sindico')).filter((x) => portaria.includes(x))) await enviar(t, alerta.trim(), null, 'síndico');
+  } else if (modo === 'reincidencia' && reincidente) {
+    await avisarEquipe('sindico', msg + alerta);
   }
   return { ...r, reincidencia };
 }
@@ -277,10 +295,8 @@ async function reabrirReclamacao(id, morador, detalhe) {
   const novo = ok(await db.from('reclamacoes').update({ status: 'nova', tratada_em: null, descricao }).eq('id', id).select().single());
   const cfg = await getConfig();
   const msg = `🔁 Reclamação nº ${id} REABERTA: voltou a acontecer\nTipo: ${TIPO_RECL(r.tipo)}${r.unidade_alvo ? `\nUnidade: ${r.unidade_alvo}` : ''}\n${detalhe || ''}\nQuem reclamou fica protegido. Veja no painel.`;
-  await avisarEquipe('portaria', msg);
-  if (cfg.telefone_sindico && (cfg.sindico_reclamacoes || 'todas') !== 'nenhuma' && normalizarTelefone(cfg.telefone_sindico) !== normalizarTelefone(cfg.telefone_portaria)) {
-    await avisarEquipe('sindico', msg);
-  }
+  const portaria = await avisarEquipe('portaria', msg);
+  if ((cfg.sindico_reclamacoes || 'todas') !== 'nenhuma') await avisarEquipe('sindico', msg, { exceto: portaria });
   return novo;
 }
 
@@ -332,6 +348,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, moradorEmTodos, telefonesDaEquipe, condominiosDoUsuario, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, moradorEmTodos, telefonesDaEquipe, telefonesDoPapel, condominiosDoUsuario, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, unidadeId, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

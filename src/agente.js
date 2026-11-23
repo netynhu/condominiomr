@@ -96,6 +96,11 @@ const FERRAMENTAS = [
     parameters: { type: 'object', properties: { aceita: { type: 'boolean' } }, required: ['aceita'] },
   },
   {
+    name: 'consultar_manutencoes',
+    description: 'Consulta o histórico de manutenções do prédio (o que foi feito, quando e por qual empresa) e as próximas programadas. Use quando perguntarem, por exemplo, quando foi a última limpeza da caixa d’água, a última manutenção do elevador ou a recarga dos extintores.',
+    parameters: { type: 'object', properties: { assunto: { type: 'string', description: 'Do que se trata, ex.: "caixa d’água", "elevador", "extintores". Vazio para tudo.' } } },
+  },
+  {
     name: 'consultar_minhas_reservas',
     description: 'Lista as reservas de espaços (salão, churrasqueira...) do morador, das próximas e de hoje. As reservas são feitas com a administração; você não cria reservas.',
     parameters: { type: 'object', properties: {} },
@@ -188,6 +193,11 @@ async function executar(nome, args, ctx) {
       ok(await db.from('moradores').update({ aceita_avisos: !!args.aceita }).eq('id', morador.id));
       return { ok: true };
     }
+    case 'consultar_manutencoes': {
+      const r = await require('./manutencoes').consultar(args.assunto);
+      if (!r.feitas.length && !r.programadas.length) return { nada_registrado: true, instrucao: 'Não há registro dessa manutenção no sistema. Diga isso com sinceridade e use perguntar_administracao para a administração informar.' };
+      return r;
+    }
     case 'consultar_minhas_reservas': {
       const r = await db.from('reservas').select('inicio, fim, status, entrada_em, saida_em, token, espaco:espacos(nome)').eq('morador_id', morador.id)
         .in('status', ['agendada', 'em_uso']).gte('fim', new Date().toISOString()).order('inicio').limit(5);
@@ -264,6 +274,9 @@ QUANDO VOCÊ NÃO SABE A RESPOSTA (muito importante)
 - Se a resposta não está escrita nas fontes acima, você NÃO sabe. Não deduza e não suponha. Isso vale também para "existe X no prédio?" (academia, bicicletário, salão, serviço): se não estiver escrito, não afirme que existe nem que não existe. Não diga coisas como "isso é feito pela administração", "procure a portaria" ou "é só pedir ao zelador" se isso não estiver escrito.
 - Seja sincero: diga que ainda não tem essa informação e que vai perguntar à administração. Chame perguntar_administracao com a pergunta na mesma hora (não pergunte se pode perguntar). Depois diga o número da dúvida e que você avisa aqui mesmo assim que a administração responder.
 - Nunca diga que encaminhou, avisou alguém ou gerou protocolo sem ter chamado a ferramenta e recebido o número de volta.
+
+MANUTENÇÕES DO PRÉDIO
+- Para perguntas sobre manutenção (última limpeza da caixa d’água, elevador, extintores, dedetização...), use consultar_manutencoes e responda com a data e a empresa registradas. Se não houver registro, diga que não tem essa informação e use perguntar_administracao.
 
 RESERVAS DE ESPAÇOS
 - As reservas são feitas com a administração (siga o que o regulamento diz). Você não cria reservas. Se o morador perguntar da reserva dele ou pedir o link do check-in/check-out, use consultar_minhas_reservas.

@@ -9,9 +9,9 @@ const { normalizarTelefone, primeiroNome, rotuloUnidade } = require('./util');
 
 // Quem recebe o aviso de pergunta nova: o síndico das Configurações e quem é Síndico/Administração com WhatsApp
 async function telefonesDaAdministracao() {
-  const cfg = await getConfig();
   const equipe = await sv.telefonesDaEquipe(['sindico', 'admin']);
-  return [...new Set([cfg.telefone_sindico, ...equipe].map(normalizarTelefone).filter(Boolean))];
+  const tels = equipe.length ? equipe : await sv.telefonesDoPapel('sindico'); // sem equipe: telefone antigo dos Ajustes
+  return [...new Set(tels.map(normalizarTelefone).filter(Boolean))];
 }
 
 async function registrar({ morador, pergunta, contexto }) {

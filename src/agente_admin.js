@@ -122,6 +122,20 @@ const FERRAMENTAS = [
     },
   },
   {
+    name: 'registrar_manutencao',
+    description: 'Registra no histórico uma manutenção que foi feita (ex.: "a caixa d’água foi limpa hoje pela Hidro Limp"). Se combinar com um item da manutenção preventiva, agenda a próxima. O assistente dos moradores passa a responder com essa informação.',
+    parameters: {
+      type: 'object',
+      properties: {
+        titulo: { type: 'string', description: 'O que foi feito, ex.: "Limpeza da caixa d’água"' },
+        feita_em: { type: 'string', description: 'Data AAAA-MM-DD (hoje se não for dita)' },
+        empresa: { type: 'string', description: 'Empresa ou responsável (opcional)' },
+        observacao: { type: 'string' },
+      },
+      required: ['titulo'],
+    },
+  },
+  {
     name: 'trocar_condominio',
     description: 'Troca o condomínio em que você está trabalhando com o síndico (quando ele administra mais de um). Use quando ele pedir para falar de outro prédio.',
     parameters: { type: 'object', properties: { nome: { type: 'string', description: 'Nome (ou parte do nome) do condomínio' } }, required: ['nome'] },
@@ -224,6 +238,17 @@ async function executar(nome, args, ctx) {
       if (atual.error || !atual.data) return { ok: false, erro: `Não existe dúvida nº ${args.numero}.` };
       const r = await responder(Number(args.numero), args.resposta, { ensinar: args.ensinar !== false, usuarioNome: admin.nome });
       return { ok: true, numero: r.duvida.id, morador_recebeu: r.enviado, assistente_aprendeu: r.duvida.ensinar };
+    }
+    case 'registrar_manutencao': {
+      // Liga ao item programado com nome parecido (para agendar a próxima)
+      const normal = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      const progs = ok(await db.from('manutencoes').select('id, titulo'));
+      const alvo = normal(args.titulo);
+      const item = progs.find((p) => alvo.includes(normal(p.titulo)) || normal(p.titulo).includes(alvo))
+        || progs.find((p) => normal(p.titulo).split(/\W+/).filter((w) => w.length > 4).some((w) => alvo.includes(w)));
+      const r = await require('./manutencoes').registrar({ manutencaoId: item?.id, titulo: args.titulo, feitaEm: args.feita_em, empresa: args.empresa, observacao: args.observacao, por: `${admin.nome} (WhatsApp)` });
+      if (r.erro) return { ok: false, erro: r.erro };
+      return { ok: true, registrado: r.titulo, em: r.feitaEm, item_programado: item?.titulo, proxima_agendada: r.proxima || undefined };
     }
     case 'trocar_condominio': {
       const lista = admin.condominios || [];

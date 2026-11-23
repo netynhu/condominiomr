@@ -265,7 +265,6 @@ router.post('/equipe', admin, a(async (req, res) => {
     ok(await dbGlobal.from('usuario_condominios').upsert({ usuario_id: novoId, condominio_id: condominioAtual() }, { onConflict: 'usuario_id,condominio_id' }));
   }
   // O síndico cadastrado com WhatsApp passa a receber os alertas do síndico
-  if (perfil === 'sindico' && dados.telefone && (id ? dados.ativo : true)) await setConfig({ telefone_sindico: dados.telefone });
   avisar(req, jaExistia
     ? `Este e-mail já tinha acesso: a pessoa passou a fazer parte da equipe deste condomínio também (com a mesma senha).`
     : perfil === 'sindico' && dados.telefone ? 'Acesso salvo. Este número passa a receber os alertas do síndico e pode usar o assistente no WhatsApp.' : 'Acesso salvo.');
@@ -274,11 +273,15 @@ router.post('/equipe', admin, a(async (req, res) => {
 
 // ---------- Configurações do prédio ----------
 router.get('/configuracoes', admin, a(async (req, res) => {
-  res.render('configuracoes', { titulo: 'Configurações', c: await getConfig() });
+  // Quem recebe os alertas: a equipe cadastrada, por perfil
+  const equipe = await equipeDoCondominio();
+  const papel = (p) => equipe.filter((x) => x.ativo && x.perfil === p);
+  const sindicos = papel('sindico').length ? papel('sindico') : papel('admin');
+  res.render('configuracoes', { titulo: 'Configurações', c: await getConfig(), alertas: { sindico: sindicos, zelador: papel('zelador'), portaria: papel('portaria') } });
 }));
 
 router.post('/configuracoes', admin, a(async (req, res) => {
-  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'telefone_sindico', 'telefone_zelador', 'telefone_portaria', 'horario_administracao', 'instrucoes_extras', 'horario_obras', 'horario_mudancas', 'horario_silencio',
+  const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'horario_administracao', 'instrucoes_extras', 'horario_obras', 'horario_mudancas', 'horario_silencio',
     'adm_nome', 'adm_contato', 'adm_telefone', 'adm_whatsapp', 'adm_email', 'adm_portal', 'adm_horario', 'adm_observacoes'];
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();

@@ -10,7 +10,7 @@
 <link rel="icon" href="/static/icone.svg?v=2" type="image/svg+xml">
 <link rel="icon" href="/static/icone-192.png?v=2" type="image/png" sizes="192x192">
 <link rel="apple-touch-icon" href="/static/icone-192.png?v=2">
-<link rel="stylesheet" href="/static/estilo.css?v=5">
+<link rel="stylesheet" href="/static/estilo.css?v=6">
 <script src="/static/dialogo.js?v=3" defer></script>
 <script src="/static/app.js?v=3" defer></script>
 </head>
@@ -19,6 +19,7 @@
   // Menu separado em: dia a dia (Operação), gestão do prédio (Administração) e ajustes (Configuração)
   const grupos = {
     admin: [
+      ...(condominios.length > 1 ? [['Todos os condomínios', [['/visao-geral', 'radar', 'Visão geral']]]] : []),
       ['Operação', [['/', 'inicio', 'Início'], ['/assistente', 'ia', 'Assistente'],['/chamados', 'chamados', 'Chamados', contadores.chamados], ['/reclamacoes', 'reclamacoes', 'Reclamações', contadores.reclamacoes], ['/duvidas', 'duvidas', 'Dúvidas', contadores.duvidas], ['/encomendas', 'encomendas', 'Encomendas', contadores.encomendas], ['/avisos', 'avisos', 'Avisos'], ['/reservas', 'reservas', 'Reservas'], ['/agenda', 'agenda', 'Agenda']]],
       ['Administração', [['/moradores', 'moradores', 'Moradores'], ['/espacos', 'check', 'Espaços e checklists'], ['/manutencoes', 'manutencao', 'Manutenção'], ['/radar', 'radar', 'Radar do grupo'], ['/relatorio', 'relatorio', 'Relatório']]],
       ['Configuração', [['/whatsapp', 'whatsapp', 'WhatsApp'], ['/documentos', 'documentos', 'Documentos'], ['/equipe', 'equipe', 'Equipe e acessos'], ['/configuracoes', 'configuracoes', 'Ajustes do prédio'], ...(usuario.dono ? [['/condominios', 'predio', 'Condomínios']] : [])]],

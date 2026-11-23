@@ -39,6 +39,11 @@ const PAPEL_IA = 'Você é o assistente de gestão de um condomínio residencial
 router.get('/', exigir(), a(async (req, res) => {
   const perfil = req.session.usuario.perfil;
   if (perfil !== 'admin') return res.redirect(PAGINA_INICIAL[perfil]);
+  // Quem atende mais de um condomínio começa pela visão geral (uma vez por sessão)
+  if ((req.session.condominios || []).length > 1 && !req.session.viuVisaoGeral) {
+    req.session.viuVisaoGeral = true;
+    return res.redirect('/visao-geral');
+  }
   const cfg = await getConfig();
   const agora = new Date().toISOString();
   const [abertos, urgentes, reclNovas, pendentes, fila, eventos, moradores] = await Promise.all([

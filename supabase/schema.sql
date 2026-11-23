@@ -347,3 +347,18 @@ create table if not exists reservas (
 create index if not exists reservas_condominio_inicio_idx on reservas (condominio_id, inicio);
 alter table reservas enable row level security;
 
+
+-- 013: histórico de manutenções
+create table if not exists manutencao_registros (
+  id bigserial primary key,
+  condominio_id uuid not null references condominios(id) on delete cascade,
+  manutencao_id uuid references manutencoes(id) on delete set null,
+  titulo text not null,
+  feita_em date not null,
+  empresa text,
+  observacao text,
+  registrada_por text,
+  criado_em timestamptz not null default now()
+);
+create index if not exists manutencao_registros_idx on manutencao_registros (condominio_id, feita_em desc);
+alter table manutencao_registros enable row level security;

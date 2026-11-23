@@ -27,12 +27,17 @@
   <label>Observações<textarea name="adm_observacoes" id="adm_observacoes" rows="2" placeholder="Ex.: Acordos só por e-mail. O boleto chega todo dia 1º no e-mail cadastrado."><%= c.adm_observacoes || '' %></textarea></label>
 
   <h2 style="margin-top:8px">Quem recebe alertas no WhatsApp</h2>
-  <div class="linha-campos">
-    <label>Síndico<input name="telefone_sindico" id="telefone_sindico" value="<%= c.telefone_sindico ? u.formatarTelefone(c.telefone_sindico) : '' %>" inputmode="tel"></label>
-    <label>Zelador<input name="telefone_zelador" id="telefone_zelador" value="<%= c.telefone_zelador ? u.formatarTelefone(c.telefone_zelador) : '' %>" inputmode="tel"></label>
-    <label>Portaria<input name="telefone_portaria" id="telefone_portaria" value="<%= c.telefone_portaria ? u.formatarTelefone(c.telefone_portaria) : '' %>" inputmode="tel"></label>
+  <p class="small muted">Os alertas vão para o WhatsApp de quem está em <a href="/equipe">Equipe e acessos</a>, de acordo com o perfil. Para mudar quem recebe, cadastre ou edite a pessoa lá.</p>
+  <div class="lista">
+    <% for (const [papel, titulo, oque] of [['sindico', 'Síndico', 'urgências, reclamações (conforme abaixo), dúvidas sem resposta, encomendas paradas, reservas e manutenção preventiva'], ['zelador', 'Zelador', 'chamados novos'], ['portaria', 'Portaria', 'reclamações novas']]) { const lista = alertas[papel].filter((x) => x.telefone); %>
+      <div class="item">
+        <div><b><%= titulo %></b> <span class="small muted">· <%= oque %></span>
+          <div class="small"><%= lista.length ? lista.map((x) => x.nome + ' · ' + u.formatarTelefone(x.telefone)).join('  |  ') : '' %><% if (!lista.length) { %><span class="muted">Ninguém com WhatsApp cadastrado. <a href="/equipe">Cadastrar na equipe</a></span><% } %></div>
+        </div>
+      </div>
+    <% } %>
   </div>
-  <p class="small muted">Síndico: urgências, reclamações (conforme a escolha abaixo), manutenção preventiva e assuntos encaminhados. Zelador: chamados novos. Portaria: todas as reclamações novas. Ninguém vê o nome de quem reclamou.</p>
+  <p class="small muted">Ninguém da equipe vê o nome de quem reclamou.</p>
 
   <h2 style="margin-top:8px">Reclamações para o síndico</h2>
   <div class="linha-campos">
