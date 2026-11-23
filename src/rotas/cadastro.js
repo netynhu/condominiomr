@@ -191,8 +191,9 @@ const { dbGlobal } = require('../db');
 const { condominioAtual } = require('../contexto');
 
 async function equipeDoCondominio() {
-  const linhas = ok(await dbGlobal.from('usuario_condominios').select('usuario:usuarios(id, nome, email, perfil, telefone, ativo, dono, criado_em)').eq('condominio_id', condominioAtual()));
-  return linhas.map((l) => l.usuario).filter(Boolean).sort((x, y) => x.nome.localeCompare(y.nome));
+  const ids = ok(await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', condominioAtual())).map((l) => l.usuario_id);
+  if (!ids.length) return [];
+  return ok(await dbGlobal.from('usuarios').select('id, nome, email, perfil, telefone, ativo, dono, criado_em').in('id', ids).order('nome'));
 }
 
 async function daEquipe(usuarioId) {

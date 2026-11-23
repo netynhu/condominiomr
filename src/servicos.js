@@ -17,23 +17,30 @@ async function acharMorador(telefone) {
 async function moradorEmTodos(telefone) {
   const vars = variantesTelefone(telefone);
   if (!vars[0]) return [];
-  return ok(await dbGlobal.from('moradores').select('id, nome, condominio_id, ativo, conversa_em, condominio:condominios(nome, ativo)').in('telefone', vars))
-    .filter((m) => m.condominio?.ativo !== false);
+  // Consultas separadas (sem depender das ligações entre tabelas no cache da API do banco)
+  const linhas = ok(await dbGlobal.from('moradores').select('id, nome, condominio_id, ativo, conversa_em').in('telefone', vars));
+  if (!linhas.length) return [];
+  const conds = ok(await dbGlobal.from('condominios').select('id, nome, ativo').in('id', [...new Set(linhas.map((m) => m.condominio_id))]));
+  return linhas.map((m) => ({ ...m, condominio: conds.find((c) => c.id === m.condominio_id) || null }))
+    .filter((m) => m.condominio && m.condominio.ativo !== false);
 }
 
 // Condomínios que a pessoa da equipe atende ("dono" da plataforma vê todos)
 async function condominiosDoUsuario(usuario) {
   if (usuario.dono) return ok(await dbGlobal.from('condominios').select('id, nome').eq('ativo', true).order('nome'));
-  const linhas = ok(await dbGlobal.from('usuario_condominios').select('condominio:condominios(id, nome, ativo)').eq('usuario_id', usuario.id));
-  return linhas.map((l) => l.condominio).filter((c) => c && c.ativo !== false).map(({ id, nome }) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+  const ids = ok(await dbGlobal.from('usuario_condominios').select('condominio_id').eq('usuario_id', usuario.id)).map((l) => l.condominio_id);
+  if (!ids.length) return [];
+  return ok(await dbGlobal.from('condominios').select('id, nome').in('id', ids).eq('ativo', true).order('nome'));
 }
 
 // Telefones da equipe do condomínio da vez com os perfis pedidos (ex.: ['zelador'] ou ['sindico','admin'])
 async function telefonesDaEquipe(perfis) {
   const id = condominioAtual();
   if (!id) return [];
-  const linhas = ok(await dbGlobal.from('usuario_condominios').select('usuario:usuarios(telefone, perfil, ativo)').eq('condominio_id', id));
-  return linhas.map((l) => l.usuario).filter((u) => u && u.ativo && u.telefone && perfis.includes(u.perfil)).map((u) => u.telefone);
+  const ids = ok(await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', id)).map((l) => l.usuario_id);
+  if (!ids.length) return [];
+  const usuarios = ok(await dbGlobal.from('usuarios').select('telefone, perfil, ativo').in('id', ids));
+  return usuarios.filter((u) => u.ativo && u.telefone && perfis.includes(u.perfil)).map((u) => u.telefone);
 }
 
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
