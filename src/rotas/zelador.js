@@ -20,7 +20,9 @@ const LOCAIS = [
 router.get('/entrar/:token', a(async (req, res) => {
   const token = String(req.params.token || '');
   const [u] = token.length >= 32 ? ok(await require('../db').dbGlobal.from('usuarios').select('id, nome, perfil, ativo, dono, condominio_atual').eq('token_acesso', token).limit(1)) : [];
-  if (!u || !u.ativo) return res.status(403).render('erro', { titulo: 'Link inválido', mensagem: 'Este link de acesso não vale mais. Peça um novo ao síndico.' });
+  if (!u || !u.ativo) return res.status(403).render('erro', { titulo: 'Link inválido', mensagem: 'Este link de acesso não vale mais. Peça um novo à administração.' });
+  // Só a equipe de manutenção entra por link. Os outros perfis entram com e-mail e senha.
+  if (u.perfil !== 'zelador') return res.status(403).render('erro', { titulo: 'Entre com e-mail e senha', mensagem: 'Este acesso é feito com e-mail e senha, na página de login.' });
   require('./comum').iniciarSessao(req, u);
   req.sessionOptions.maxAge = NOVENTA_DIAS; // fica conectado no celular
   res.redirect(u.perfil === 'zelador' ? '/z' : PAGINA_INICIAL[u.perfil]);
@@ -29,8 +31,8 @@ router.get('/entrar/:token', a(async (req, res) => {
 // ---------- Instalação como app (tela inicial do celular) ----------
 router.get('/manifest.webmanifest', (req, res) => {
   res.type('application/manifest+json').json({
-    name: `Zelador · ${res.locals.cfg.nome_predio}`,
-    short_name: 'Zelador',
+    name: `Manutenção · ${res.locals.cfg.nome_predio}`,
+    short_name: 'Manutenção',
     start_url: '/z',
     scope: '/',
     display: 'standalone',
@@ -74,7 +76,7 @@ router.post('/z/novo', equipe, express6mb(), a(async (req, res) => {
   try {
     const r = await completar(
       'Você classifica chamados de manutenção de condomínio. Responda só JSON: {"titulo": "até 60 caracteres, claro", "prioridade": "baixa|normal|alta|urgente", "categoria": "manutencao|limpeza|seguranca"}. Urgente só com risco a pessoas, pessoa presa no elevador, vazamento grande ou falta total de água/luz.',
-      `Local: ${local}\nRelato do zelador: ${texto || '(sem texto)'}${foto ? '\n(tem foto)' : ''}`,
+      `Local: ${local}\nRelato da manutenção: ${texto || '(sem texto)'}${foto ? '\n(tem foto)' : ''}`,
       { maxTokens: 120, temperatura: 0 },
     );
     const j = JSON.parse(r.replace(/```json|```/g, '').trim());

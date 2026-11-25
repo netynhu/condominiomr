@@ -209,6 +209,8 @@ router.get('/equipe', admin, a(async (req, res) => {
 // Gera um link de acesso sem senha (bom para o zelador) e manda pelo WhatsApp
 router.post('/equipe/:id/link', admin, a(async (req, res) => {
   if (!(await daEquipe(req.params.id))) return res.redirect('/equipe');
+  const [alvo] = ok(await dbGlobal.from('usuarios').select('perfil').eq('id', req.params.id).limit(1));
+  if (alvo?.perfil !== 'zelador') { avisar(req, 'O link sem senha é só para a equipe de manutenção. Os outros perfis entram com e-mail e senha.', 'erro'); return res.redirect('/equipe'); }
   const token = crypto.randomBytes(24).toString('hex');
   const u = ok(await dbGlobal.from('usuarios').update({ token_acesso: token }).eq('id', req.params.id).select('nome, telefone, perfil').single());
   const cfg = await getConfig();
@@ -217,8 +219,8 @@ router.post('/equipe/:id/link', admin, a(async (req, res) => {
   if (u.telefone) {
     // O link vai só no botão; aparece escrito apenas se o botão falhar (plano B)
     enviado = await enviarBotoes(u.telefone,
-      `Olá, ${u.nome.split(' ')[0]}! Este é o seu acesso ao app ${u.perfil === 'zelador' ? 'do zelador' : 'do condomínio'} do ${cfg.nome_predio}.\n\nToque no botão abaixo para entrar. Depois, no menu do navegador, escolha "Adicionar à tela inicial" para ter o ícone no celular. Não encaminhe esta mensagem para ninguém.`,
-      [`🔑 Entrar no app|${link}`], { rodape: u.perfil === 'zelador' ? 'App do zelador' : cfg.nome_predio, planoB: `👉 ${link}`, rotulo: u.perfil === 'zelador' ? 'zelador' : '' });
+      `Olá, ${u.nome.split(' ')[0]}! Este é o seu acesso ao app ${u.perfil === 'zelador' ? 'da manutenção' : 'do condomínio'} do ${cfg.nome_predio}.\n\nToque no botão abaixo para entrar. Depois, no menu do navegador, escolha "Adicionar à tela inicial" para ter o ícone no celular. Não encaminhe esta mensagem para ninguém.`,
+      [`🔑 Entrar no app|${link}`], { rodape: u.perfil === 'zelador' ? 'App da manutenção' : cfg.nome_predio, planoB: `👉 ${link}`, rotulo: u.perfil === 'zelador' ? 'zelador' : '' });
   }
   avisar(req, enviado ? `Link enviado para o WhatsApp de ${u.nome}. Links antigos deixaram de funcionar.` : `Link de ${u.nome} (cadastre o WhatsApp para enviar automaticamente): ${link}`, enviado ? 'ok' : 'erro');
   res.redirect('/equipe');
@@ -259,6 +261,7 @@ router.post('/equipe', admin, a(async (req, res) => {
     let novoId = existe?.id;
     if (existe) jaExistia = true;
     else {
+      if (!dados.email || !dados.email.includes('@')) { avisar(req, 'Informe o e-mail: este perfil entra com e-mail e senha.', 'erro'); return res.redirect('/equipe'); }
       if (!senha || senha.length < 8) { avisar(req, 'A senha precisa de pelo menos 8 caracteres.', 'erro'); return res.redirect('/equipe'); }
       const r = await dbGlobal.from('usuarios').insert({ ...dados, senha_hash: await bcrypt.hash(senha, 10), condominio_atual: condominioAtual() }).select('id').single();
       if (r.error) { avisar(req, r.error.message, 'erro'); return res.redirect('/equipe'); }

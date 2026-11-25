@@ -82,7 +82,7 @@ const FERRAMENTAS = [
   },
   {
     name: 'abrir_chamado',
-    description: 'Abre um chamado para o zelador.',
+    description: 'Abre um chamado para a equipe de manutenção.',
     parameters: {
       type: 'object',
       properties: { titulo: { type: 'string' }, local: { type: 'string' }, descricao: { type: 'string' }, prioridade: { type: 'string', enum: ['baixa', 'normal', 'alta', 'urgente'] } },

@@ -29,7 +29,7 @@
   <h2 style="margin-top:8px">Quem recebe alertas no WhatsApp</h2>
   <p class="small muted">Os alertas vão para o WhatsApp de quem está em <a href="/equipe">Equipe e acessos</a>, de acordo com o perfil. Para mudar quem recebe, cadastre ou edite a pessoa lá.</p>
   <div class="lista">
-    <% for (const [papel, titulo, oque] of [['sindico', 'Síndico', 'urgências, reclamações (conforme abaixo), dúvidas sem resposta, encomendas paradas, reservas e manutenção preventiva'], ['zelador', 'Zelador', 'chamados novos'], ['portaria', 'Portaria', 'reclamações novas']]) { const lista = alertas[papel].filter((x) => x.telefone); %>
+    <% for (const [papel, titulo, oque] of [['sindico', 'Síndico', 'urgências, reclamações (conforme abaixo), dúvidas sem resposta, encomendas paradas, reservas e manutenção preventiva'], ['zelador', 'Manutenção', 'chamados novos'], ['portaria', 'Portaria', 'reclamações novas']]) { const lista = alertas[papel].filter((x) => x.telefone); %>
       <div class="item">
         <div><b><%= titulo %></b> <span class="small muted">· <%= oque %></span>
           <div class="small"><%= lista.length ? lista.map((x) => x.nome + ' · ' + u.formatarTelefone(x.telefone)).join('  |  ') : '' %><% if (!lista.length) { %><span class="muted">Ninguém com WhatsApp cadastrado. <a href="/equipe">Cadastrar na equipe</a></span><% } %></div>

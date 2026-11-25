@@ -56,7 +56,7 @@ router.post('/whatsapp/grupos', exigir('admin'), a(async (req, res) => {
 // Grupo da equipe de manutenção: recebe os chamados novos junto com o zelador
 router.post('/whatsapp/grupo-manutencao', exigir('admin'), a(async (req, res) => {
   const cfg = await getConfig();
-  if (req.body.jid && req.body.jid === cfg.grupo_jid) { avisar(req, 'Esse é o grupo dos moradores. Escolha o grupo onde estão o zelador e a equipe de manutenção.', 'erro'); return res.redirect('/whatsapp/grupos'); }
+  if (req.body.jid && req.body.jid === cfg.grupo_jid) { avisar(req, 'Esse é o grupo dos moradores. Escolha o grupo da equipe de manutenção.', 'erro'); return res.redirect('/whatsapp/grupos'); }
   await setConfig({ grupo_manutencao_jid: req.body.jid || '', grupo_manutencao_nome: req.body.nome || '' });
   avisar(req, req.body.jid ? `Os chamados novos também vão para o grupo "${req.body.nome}".` : 'Os chamados deixaram de ir para o grupo da manutenção.');
   res.redirect('/whatsapp');

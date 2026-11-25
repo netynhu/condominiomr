@@ -139,7 +139,7 @@ async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'n
     const msg = `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}`;
     for (const tel of await telefonesZeladores()) {
       // Botão que abre o chamado direto no app do zelador (plano B: o link em texto)
-      if (url) await enviarBotoes(tel, msg, [`📋 Abrir chamado|${url}`], { rodape: 'App do zelador', planoB: `👉 Toque para abrir: ${url}`, rotulo: 'zelador' });
+      if (url) await enviarBotoes(tel, msg, [`📋 Abrir chamado|${url}`], { rodape: 'App da manutenção', planoB: `👉 Toque para abrir: ${url}`, rotulo: 'zelador' });
       else await enviar(tel, msg, null, 'zelador');
     }
     await postarNoGrupoManutencao(`${msg}${url ? `

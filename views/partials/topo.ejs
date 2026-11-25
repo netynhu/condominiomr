@@ -31,7 +31,7 @@
   const ativo = (href) => href === '/' ? caminho === '/' : (caminho === href || caminho.startsWith(href + '/') || (href === '/whatsapp' && caminho.startsWith('/whatsapp')));
   let secaoAtual = '';
   for (const [g, itens] of grupos) for (const it of itens) if (ativo(it[0])) secaoAtual = g;
-  const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Zelador', portaria: 'Portaria', conselho: 'Conselho' };
+  const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Manutenção', portaria: 'Portaria', conselho: 'Conselho' };
   const iniciais = usuario.nome.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 %>
 <div class="app">
