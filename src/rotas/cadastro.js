@@ -193,7 +193,8 @@ const { condominioAtual } = require('../contexto');
 async function equipeDoCondominio() {
   const ids = ok(await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', condominioAtual())).map((l) => l.usuario_id);
   if (!ids.length) return [];
-  return ok(await dbGlobal.from('usuarios').select('id, nome, email, perfil, telefone, ativo, dono, criado_em').in('id', ids).order('nome'));
+  // O super admin (dono) não aparece na equipe de nenhum condomínio
+  return ok(await dbGlobal.from('usuarios').select('id, nome, email, perfil, telefone, ativo, dono, criado_em').in('id', ids).eq('dono', false).order('nome'));
 }
 
 async function daEquipe(usuarioId) {
@@ -253,7 +254,8 @@ router.post('/equipe', admin, a(async (req, res) => {
     ok(await dbGlobal.from('usuarios').update(dados).eq('id', id));
   } else {
     // E-mail que já tem acesso (ex.: síndico profissional de outro prédio): só liga ao condomínio da vez
-    const [existe] = ok(await dbGlobal.from('usuarios').select('id, nome').eq('email', dados.email).limit(1));
+    const [existe] = ok(await dbGlobal.from('usuarios').select('id, nome, dono').eq('email', dados.email).limit(1));
+    if (existe?.dono) { avisar(req, 'Este e-mail é do super admin, que já vê todos os condomínios sem fazer parte de equipe.', 'erro'); return res.redirect('/equipe'); }
     let novoId = existe?.id;
     if (existe) jaExistia = true;
     else {

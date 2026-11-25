@@ -39,8 +39,9 @@ async function telefonesDaEquipe(perfis) {
   if (!id) return [];
   const ids = ok(await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', id)).map((l) => l.usuario_id);
   if (!ids.length) return [];
-  const usuarios = ok(await dbGlobal.from('usuarios').select('telefone, perfil, ativo').in('id', ids));
-  return usuarios.filter((u) => u.ativo && u.telefone && perfis.includes(u.perfil)).map((u) => u.telefone);
+  const usuarios = ok(await dbGlobal.from('usuarios').select('telefone, perfil, ativo, dono').in('id', ids));
+  // O super admin (dono) não recebe alertas de nenhum condomínio
+  return usuarios.filter((u) => !u.dono && u.ativo && u.telefone && perfis.includes(u.perfil)).map((u) => u.telefone);
 }
 
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
@@ -141,6 +142,9 @@ async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'n
       if (url) await enviarBotoes(tel, msg, [`📋 Abrir chamado|${url}`], { rodape: 'App do zelador', planoB: `👉 Toque para abrir: ${url}`, rotulo: 'zelador' });
       else await enviar(tel, msg, null, 'zelador');
     }
+    await postarNoGrupoManutencao(`${msg}${url ? `
+
+👉 ${url}` : ''}`);
   }
   if (prioridade === 'urgente' || (prioridade === 'alta' && foraDoHorario())) {
     await avisarEquipe('sindico', `${EMOJI_PRIORIDADE[prioridade]} ${corpo}`);
@@ -156,6 +160,11 @@ async function mudarStatusChamado(id, status, observacao, usuarioNome, fotoConcl
   if (observacao) patch.observacao_equipe = observacao;
   if (status === 'resolvido') { patch.resolvido_em = agora; if (fotoConclusao) patch.foto_conclusao = fotoConclusao; }
   const ch = ok(await db.from('chamados').update(patch).eq('id', id).select('*, morador:moradores(*)').single());
+  if (status === 'resolvido' && ch.categoria !== 'administracao') {
+    await postarNoGrupoManutencao(`✅ Chamado nº ${id} resolvido: ${ch.titulo}${observacao ? `
+${observacao}` : ''}${usuarioNome ? `
+Por: ${usuarioNome}` : ''}`);
+  }
   await registrarHistoricoChamado(id, `Status: ${ROTULO_STATUS[status]}${observacao ? ` (${observacao})` : ''}${fotoConclusao ? ' com foto' : ''}`, usuarioNome);
   if (ch.morador && ch.morador.ativo) {
     const nome = primeiroNome(ch.morador.nome);
@@ -183,6 +192,17 @@ async function mudarStatusChamado(id, status, observacao, usuarioNome, fotoConcl
     }
   }
   return ch;
+}
+
+// Grupo da equipe de manutenção (opcional, em WhatsApp > Grupos): recebe os chamados novos e os resolvidos
+async function postarNoGrupoManutencao(texto) {
+  const cfg = await getConfig();
+  if (!cfg.grupo_manutencao_jid || cfg.grupo_manutencao_jid === cfg.grupo_jid) return false;
+  try {
+    await uazapi.enviarNoGrupo(cfg.grupo_manutencao_jid, `🏢 *${cfg.nome_predio}*
+${texto}`);
+    return true;
+  } catch (e) { console.error('[grupo manutenção]', e.message); return false; }
 }
 
 // Avisos oficiais no grupo dos moradores (o assistente não conversa no grupo, só posta)

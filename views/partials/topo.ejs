@@ -66,7 +66,7 @@
     </nav>
     <div class="lateral-usuario">
       <span class="avatar"><%= iniciais %></span>
-      <div><b><%= usuario.nome %></b><small><%= perfis[usuario.cargo || usuario.perfil] %></small></div>
+      <div><b><%= usuario.nome %></b><small><%= usuario.dono ? 'Super admin' : perfis[usuario.cargo || usuario.perfil] %></small></div>
       <form method="post" action="/sair"><button class="icone-btn" type="submit" title="Sair" aria-label="Sair"><%- icone('sair') %></button></form>
     </div>
   </aside>

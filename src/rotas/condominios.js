@@ -68,8 +68,7 @@ router.post('/condominios', exigirDono, a(async (req, res) => {
   const nome = String(req.body.nome || '').trim();
   if (nome.length < 3) { avisar(req, 'Informe o nome do condomínio.', 'erro'); return res.redirect('/condominios'); }
   const c = ok(await dbGlobal.from('condominios').insert({ nome }).select('id, nome').single());
-  // Quem criou já faz parte da equipe do novo condomínio e passa a trabalhar nele
-  ok(await dbGlobal.from('usuario_condominios').upsert({ usuario_id: req.session.usuario.id, condominio_id: c.id }, { onConflict: 'usuario_id,condominio_id' }));
+  // O super admin (dono) vê todos os condomínios sem fazer parte de nenhuma equipe: só passa a trabalhar no novo
   await noCondominio(c.id, () => setConfig({ nome_predio: nome, nome_assistente: 'Assistente do condomínio' }));
   req.session.condominioId = c.id;
   req.session.condominios = null;
