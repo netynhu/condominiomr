@@ -2,7 +2,13 @@
 const router = require('express').Router();
 const { dbGlobal, ok, setConfig, getConfig, contar } = require('../db');
 const { noCondominio } = require('../contexto');
-const { a, exigir, exigirDono, avisar } = require('./comum');
+const { a, exigir, exigirGestor, avisar } = require('./comum');
+
+// Condomínios que o gestor pode ver e editar: o dono vê todos; o síndico, os dele (ativos ou não)
+async function idsDoGestor(u) {
+  if (u.dono) return null; // todos
+  return ok(await dbGlobal.from('usuario_condominios').select('condominio_id').eq('usuario_id', u.id)).map((l) => l.condominio_id);
+}
 
 // Troca o condomínio da vez (seletor do topo). Só entre os condomínios que a pessoa atende.
 router.post('/condominio/trocar', exigir(), a(async (req, res) => {
@@ -51,8 +57,11 @@ router.get('/visao-geral', exigir('admin'), a(async (req, res) => {
   res.render('visao_geral', { titulo: 'Visão geral', cards });
 }));
 
-router.get('/condominios', exigirDono, a(async (req, res) => {
-  const lista = ok(await dbGlobal.from('condominios').select('id, nome, ativo, criado_em').order('nome'));
+router.get('/condominios', exigirGestor, a(async (req, res) => {
+  const ids = await idsDoGestor(req.session.usuario);
+  let q = dbGlobal.from('condominios').select('id, nome, ativo, criado_em').order('nome');
+  if (ids) q = q.in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
+  const lista = ok(await q);
   const [moradores, equipe] = await Promise.all([
     dbGlobal.from('moradores').select('condominio_id').eq('ativo', true).then(ok),
     dbGlobal.from('usuario_condominios').select('condominio_id').then(ok),
@@ -64,11 +73,15 @@ router.get('/condominios', exigirDono, a(async (req, res) => {
   });
 }));
 
-router.post('/condominios', exigirDono, a(async (req, res) => {
+router.post('/condominios', exigirGestor, a(async (req, res) => {
   const nome = String(req.body.nome || '').trim();
   if (nome.length < 3) { avisar(req, 'Informe o nome do condomínio.', 'erro'); return res.redirect('/condominios'); }
   const c = ok(await dbGlobal.from('condominios').insert({ nome }).select('id, nome').single());
-  // O super admin (dono) vê todos os condomínios sem fazer parte de nenhuma equipe: só passa a trabalhar no novo
+  // O síndico que cria passa a fazer parte da equipe do novo condomínio (recebe os alertas dele).
+  // O super admin (dono) vê todos sem fazer parte de nenhuma equipe.
+  if (!req.session.usuario.dono) {
+    ok(await dbGlobal.from('usuario_condominios').upsert({ usuario_id: req.session.usuario.id, condominio_id: c.id }, { onConflict: 'usuario_id,condominio_id' }));
+  }
   await noCondominio(c.id, () => setConfig({ nome_predio: nome, nome_assistente: 'Assistente do condomínio' }));
   req.session.condominioId = c.id;
   req.session.condominios = null;
@@ -77,7 +90,9 @@ router.post('/condominios', exigirDono, a(async (req, res) => {
   res.redirect('/configuracoes');
 }));
 
-router.post('/condominios/:id', exigirDono, a(async (req, res) => {
+router.post('/condominios/:id', exigirGestor, a(async (req, res) => {
+  const ids = await idsDoGestor(req.session.usuario);
+  if (ids && !ids.includes(req.params.id)) return res.redirect('/condominios');
   const dados = {};
   if (req.body.nome) dados.nome = String(req.body.nome).trim();
   dados.ativo = req.body.ativo === 'on';

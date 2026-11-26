@@ -123,8 +123,8 @@ app.use(async (req, res, next) => {
   if (!atual) {
     // Sem condomínio: o dono vai criar o primeiro; os outros só podem sair
     const livre = ['/condominios', '/sair', '/login'].some((p) => req.path === p || req.path.startsWith(p + '/'));
-    if (u.dono && !livre) return res.redirect('/condominios');
-    if (!u.dono && !livre) return res.status(403).render('erro', { titulo: 'Sem condomínio', mensagem: 'Seu acesso ainda não está ligado a nenhum condomínio. Fale com a administração.', usuario: u, condominios: [], condominioAtual: null, cfg: { nome_predio: 'Condomínio' }, contadores: {}, caminho: req.path, aviso: null, faltando: [], icone, u: util });
+    if (require('./rotas/comum').ehGestor(u) && !livre) return res.redirect('/condominios');
+    if (!require('./rotas/comum').ehGestor(u) && !livre) return res.status(403).render('erro', { titulo: 'Sem condomínio', mensagem: 'Seu acesso ainda não está ligado a nenhum condomínio. Fale com a administração.', usuario: u, condominios: [], condominioAtual: null, cfg: { nome_predio: 'Condomínio' }, contadores: {}, caminho: req.path, aviso: null, faltando: [], icone, u: util });
     return next();
   }
   noCondominio(atual.id, () => next());

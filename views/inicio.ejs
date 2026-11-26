@@ -1,7 +1,8 @@
 <%- include('partials/topo') %>
 <div class="cabeca">
   <div><h1>Bom dia, <%= u.primeiroNome(usuario.nome) %>.</h1><p class="muted"><%= u.dataExtenso(new Date().toISOString()) %></p></div>
-  <% if (!whats || !whats.conectado) { %><a class="btn" href="/whatsapp">Conectar o WhatsApp</a><% } %>
+  <% const gestor = usuario.dono || usuario.cargo === 'sindico'; %>
+  <% if ((!whats || !whats.conectado) && gestor) { %><a class="btn" href="/whatsapp">Conectar o WhatsApp</a><% } %>
 </div>
 
 <div class="numeros">
@@ -10,7 +11,7 @@
   <a class="numero <%= duvidas ? 'atencao' : '' %>" href="/duvidas"><b><%= duvidas %></b><span>perguntas sem resposta</span></a>
   <a class="numero" href="/moradores"><b><%= moradores %></b><span>moradores ativos</span></a>
   <a class="numero" href="/avisos"><b><%= fila %></b><span>mensagens na fila de envio</span></a>
-  <a class="numero" href="/whatsapp"><b style="font-size:1.1rem;padding:9px 0"><%= whats ? (whats.conectado ? 'Conectado' : 'Desconectado') : 'Sem resposta' %></b><span>WhatsApp do prédio</span></a>
+  <a class="numero" href="<%= gestor ? '/whatsapp' : '#' %>"><b style="font-size:1.1rem;padding:9px 0"><%= whats ? (whats.conectado ? 'Conectado' : 'Desconectado') : 'Sem resposta' %></b><span>WhatsApp do prédio</span></a>
 </div>
 
 <div class="grade2">

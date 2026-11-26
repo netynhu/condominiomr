@@ -233,3 +233,11 @@ hr{border:0;border-top:1px solid var(--line);width:100%;margin:0}
 .indicador.atencao button{background:var(--warn-soft);border-color:var(--warn-line)}
 .indicador.atencao b{color:var(--warn)}
 @media (max-width:520px){.cartoes-condominio{grid-template-columns:1fr}}
+
+/* ---------- Bloco do condomínio no menu (separa a área geral da área do prédio) ---------- */
+.bloco-condominio{margin:4px 0 2px;padding:12px 10px 10px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:6px}
+.bloco-condominio .grupo-titulo{padding:0}
+.bloco-condominio .seletor-condominio{padding:0}
+.nome-condominio{display:flex;align-items:center;gap:8px;color:#fff;font-weight:700;font-size:.9rem;line-height:1.25}
+.nome-condominio svg{width:18px;height:18px;flex:none;opacity:.8}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

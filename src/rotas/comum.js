@@ -20,6 +20,14 @@ const exigirDono = (req, res, next) => {
   next();
 };
 
+// Gestor: o super admin (dono) ou o síndico. Cria condomínios, vê a visão geral e a conexão do WhatsApp.
+const ehGestor = (u) => Boolean(u && (u.dono || u.cargo === 'sindico'));
+const exigirGestor = (req, res, next) => {
+  if (!req.session.usuario) return res.redirect('/login');
+  if (!ehGestor(req.session.usuario)) return res.status(403).render('erro', { titulo: 'Sem acesso', mensagem: 'Só o síndico ou o responsável pela plataforma pode fazer isso.' });
+  next();
+};
+
 // Começa a sessão de quem entrou (senha ou link). O condomínio é escolhido no próximo passo (server.js).
 function iniciarSessao(req, u) {
   req.session.usuario = { id: u.id, nome: u.nome, perfil: u.perfil === 'sindico' ? 'admin' : u.perfil, cargo: u.perfil, dono: Boolean(u.dono) };
@@ -29,4 +37,4 @@ function iniciarSessao(req, u) {
 
 const PAGINA_INICIAL = { admin: '/', sindico: '/', zelador: '/z', portaria: '/encomendas', conselho: '/relatorio' };
 
-module.exports = { a, exigir, exigirDono, avisar, iniciarSessao, PAGINA_INICIAL };
+module.exports = { a, exigir, exigirDono, exigirGestor, ehGestor, avisar, iniciarSessao, PAGINA_INICIAL };

@@ -1,6 +1,6 @@
 <%- include('partials/topo') %>
 <div class="cabeca">
-  <div><h1>Conexão do WhatsApp</h1><p class="muted">O número que conversa com os moradores<%= condominios.length > 1 ? ' de todos os condomínios' : '' %>. O grupo dos moradores é escolhido em cada condomínio.</p></div>
+  <div><h1>Conexão do WhatsApp</h1><p class="muted">O número do assistente, usado por todos os condomínios.</p></div>
 </div>
 
 <div class="grade2">
@@ -40,13 +40,9 @@
   </div>
 
   <div class="card">
-    <h2>Grupo dos moradores<%= condominios.length > 1 && condominioAtual ? ' do ' + condominioAtual.nome : '' %></h2>
-    <p class="muted">O assistente lê o grupo para entender os assuntos do prédio e conhecer os moradores. Ele nunca escreve no grupo.</p>
-    <p>Grupo lido: <b><%= cfg.grupo_nome || 'nenhum' %></b></p>
-    <div class="acoes"><a class="btn sec" href="/whatsapp/grupos">Escolher grupo</a></div>
-    <p>Grupo da manutenção: <b><%= cfg.grupo_manutencao_nome || 'nenhum' %></b></p>
-    <p class="small muted">Opcional. Os chamados novos vão para a manutenção e também para esse grupo, onde está a equipe.</p>
-    <p class="small muted">Recomendação: avise no grupo que o assistente do prédio lê as mensagens.</p>
+    <h2>Um número para todos os condomínios</h2>
+    <p class="muted">Este é o número do assistente. Ele atende os moradores de todos os condomínios e descobre de qual prédio é cada um pelo telefone cadastrado.</p>
+    <p class="small muted">Os grupos de WhatsApp (dos moradores e da manutenção) são escolhidos dentro de cada condomínio, em <b>Configuração &gt; Grupos</b>. O número do assistente precisa estar em cada grupo.</p>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <h2>Recebimento de mensagens</h2>
     <p class="small muted">Endereço que a Uazapi usa para entregar as mensagens: <code><%= webhook || 'defina APP_URL' %></code>. Ele é configurado sozinho ao gerar o QR code.</p>
