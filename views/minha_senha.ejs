@@ -1,0 +1,13 @@
+<%- include('partials/topo') %>
+<div class="cabeca">
+  <div><h1>Minha senha</h1><p class="muted">Troque a senha que você usa para entrar no painel. Depois da troca, você recebe um aviso no seu WhatsApp.</p></div>
+</div>
+<form class="card campos" method="post" action="/minha-senha" style="max-width:460px">
+  <% if (erro) { %><div class="flash erro"><%= erro %></div><% } %>
+  <label>Senha atual<input type="password" name="atual" id="atual" required autocomplete="current-password"></label>
+  <label>Nova senha<input type="password" name="senha" id="senha" required minlength="8" autocomplete="new-password"></label>
+  <label>Repita a nova senha<input type="password" name="confirmar" id="confirmar" required minlength="8" autocomplete="new-password"></label>
+  <button class="btn" type="submit">Trocar senha</button>
+  <p class="small muted">Esqueceu a senha atual? Saia e use "Esqueci minha senha" na tela de entrada.</p>
+</form>
+<%- include('partials/rodape') %>

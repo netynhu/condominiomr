@@ -1,0 +1,30 @@
+<%- include('partials/topo') %>
+<div class="entrar">
+  <% if (modo === 'pedir') { %>
+  <form class="card campos" method="post" action="/esqueci">
+    <span class="logo"><%- icone('chave') %></span>
+    <div><h1>Esqueci minha senha</h1><p class="muted">Digite o seu e-mail de acesso. O link para criar uma nova senha chega no WhatsApp cadastrado na equipe do condomínio.</p></div>
+    <% if (erro) { %><div class="flash erro"><%= erro %></div><% } %>
+    <% if (ok) { %><div class="flash"><%= ok %></div><% } %>
+    <label>E-mail<input type="email" name="email" id="email" value="<%= email %>" required autofocus autocomplete="username"></label>
+    <button class="btn" type="submit">Enviar link no WhatsApp</button>
+    <p class="small muted"><a href="/login">Voltar para entrar</a></p>
+  </form>
+  <% } else if (modo === 'nova') { %>
+  <form class="card campos" method="post">
+    <span class="logo"><%- icone('chave') %></span>
+    <div><h1>Nova senha</h1><p class="muted"><%= nome ? nome.split(' ')[0] + ', crie' : 'Crie' %> a sua nova senha, com pelo menos 8 caracteres.</p></div>
+    <% if (erro) { %><div class="flash erro"><%= erro %></div><% } %>
+    <label>Nova senha<input type="password" name="senha" id="senha" required minlength="8" autofocus autocomplete="new-password"></label>
+    <label>Repita a nova senha<input type="password" name="confirmar" id="confirmar" required minlength="8" autocomplete="new-password"></label>
+    <button class="btn" type="submit">Salvar nova senha</button>
+  </form>
+  <% } else { %>
+  <div class="card campos">
+    <span class="logo"><%- icone('chave') %></span>
+    <div><h1>Link vencido</h1><p class="muted">Este link já foi usado ou passou dos 30 minutos. Peça um novo.</p></div>
+    <a class="btn" href="/esqueci">Pedir outro link</a>
+  </div>
+  <% } %>
+</div>
+<%- include('partials/rodape') %>

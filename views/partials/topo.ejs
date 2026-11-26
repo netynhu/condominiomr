@@ -89,6 +89,7 @@
     <div class="lateral-usuario">
       <span class="avatar"><%= iniciais %></span>
       <div><b><%= usuario.nome %></b><small><%= usuario.dono ? 'Super admin' : perfis[usuario.cargo || usuario.perfil] %></small></div>
+      <% if (usuario.perfil !== 'zelador') { %><a class="icone-btn" href="/minha-senha" title="Minha senha" aria-label="Minha senha"><%- icone('chave') %></a><% } %>
       <form method="post" action="/sair"><button class="icone-btn" type="submit" title="Sair" aria-label="Sair"><%- icone('sair') %></button></form>
     </div>
   </aside>
