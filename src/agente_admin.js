@@ -5,6 +5,7 @@ const { db, dbGlobal, ok, getConfig } = require('./db');
 const { env } = require('./config');
 const { openai, completar } = require('./ia');
 const sv = require('./servicos');
+const { noCondominio } = require('./contexto');
 const { variantesTelefone, normalizarTelefone, dataExtenso, dataHora, localParaISO, hojeParaIA } = require('./util');
 
 const HISTORICO = 20;
@@ -30,6 +31,63 @@ async function acharAdmin(telefone) {
   if (!u.condominios.length) return null;
   u.condominio_id = (u.condominios.find((c) => c.id === u.condominio_atual) || u.condominios[0]).id;
   return u;
+}
+
+// ---------- Equipe com mais de um prédio: de qual prédio é a mensagem ----------
+// 1) Citou o prédio ("aviso no Smile") -> é dele. 2) Está no meio de uma conversa (últimos 30 min) -> mesmo prédio.
+// 3) Senão, pergunta com botões e guarda o pedido até a escolha. Toda resposta mostra o prédio (🏢 Nome).
+const CONVERSA_MS = 30 * 60000;
+const aguardandoPredio = new Map(); // telefone -> { texto, em }
+const normal = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const COMUNS = new Set(['edificio', 'condominio', 'residencial', 'predio', 'torre', 'torres', 'parque', 'jardim', 'jardins', 'conjunto', 'residence', 'village', 'bloco', 'vila', 'solar', 'home', 'parada', 'vista', 'alto', 'central', 'nova', 'novo', 'santa', 'santo', 'park', 'plaza', 'garden', 'flores', 'bela', 'belo', 'sul', 'norte', 'leste', 'oeste', 'mais']);
+
+function predioCitado(texto, lista) {
+  const t = ` ${normal(texto).replace(/[^a-z0-9]+/g, ' ')} `;
+  const nomeTodo = lista.filter((c) => t.includes(` ${normal(c.nome).replace(/[^a-z0-9]+/g, ' ').trim()} `));
+  if (nomeTodo.length === 1) return nomeTodo[0];
+  const porPalavra = lista.filter((c) => normal(c.nome).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !COMUNS.has(w)).some((w) => t.includes(` ${w} `)));
+  return porPalavra.length === 1 ? porPalavra[0] : null;
+}
+
+async function escolherPredioDaEquipe(admin, tel, texto) {
+  const lista = admin.condominios || [];
+  if (lista.length <= 1) return { condominioId: admin.condominio_id, texto };
+  const guardado = aguardandoPredio.get(tel);
+  const pendente = guardado && Date.now() - guardado.em < CONVERSA_MS ? guardado : null;
+  const botao = (/\[\[eqcond_([0-9a-f-]{36})\]\]/.exec(texto) || [])[1];
+  const resto = texto.replace(/\[\[eqcond_[0-9a-f-]{36}\]\]/g, '').trim();
+  const escolhido = (botao && lista.find((c) => c.id === botao)) || predioCitado(resto, lista);
+
+  if (escolhido) {
+    await dbGlobal.from('usuarios').update({ condominio_atual: escolhido.id }).eq('id', admin.id);
+    // Resposta à pergunta "qual prédio?": segue com o pedido que estava guardado
+    if (pendente && (botao || resto.length <= 60)) {
+      aguardandoPredio.delete(tel);
+      return { condominioId: escolhido.id, texto: pendente.texto };
+    }
+    aguardandoPredio.delete(tel);
+    if (!resto) { // tocou no botão, mas o pedido guardado já expirou
+      await noCondominio(escolhido.id, () => sv.enviar(tel, `🏢 *${escolhido.nome}*\nCerto! Pode mandar o pedido.`, null, ROTULO[admin.perfil]));
+      return null;
+    }
+    return { condominioId: escolhido.id, texto: resto };
+  }
+
+  // No meio de uma conversa: continua no mesmo prédio (ex.: "sim, pode enviar")
+  if (!pendente) {
+    const [ultima] = ok(await dbGlobal.from('mensagens').select('condominio_id, criado_em').eq('telefone', tel).not('condominio_id', 'is', null)
+      .gte('criado_em', new Date(Date.now() - CONVERSA_MS).toISOString()).order('criado_em', { ascending: false }).limit(1));
+    if (ultima && lista.some((c) => c.id === ultima.condominio_id)) return { condominioId: ultima.condominio_id, texto };
+  }
+
+  // Pergunta com botões e guarda o pedido
+  const pedido = pendente ? `${pendente.texto}\n${texto}` : texto;
+  aguardandoPredio.set(tel, { texto: pedido, em: Date.now() });
+  const resumo = pedido.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  await sv.enviarBotoes(tel, `Para qual condomínio é isso?${resumo ? `\n\n"${resumo}${resumo.length >= 80 ? '...' : ''}"` : ''}`,
+    lista.slice(0, 10).map((c) => `🏢 ${c.nome}|eqcond_${c.id}`),
+    { tipo: lista.length > 3 ? 'list' : 'button', botaoLista: 'Escolher o prédio', planoB: `Responda com o nome do prédio: ${lista.map((c) => c.nome).join(', ')}.` });
+  return null;
 }
 
 const paraISO = (s) => (!s ? null : /[zZ]|[+-]\d\d:\d\d$/.test(s) ? new Date(s).toISOString() : localParaISO(s.slice(0, 16)));
@@ -358,7 +416,7 @@ async function sistema(admin, canal = 'whatsapp') {
 ${restrito ? `Pelo WhatsApp, ${admin.nome} só pode: ${admin.perfil === 'portaria' ? 'registrar e entregar encomendas, preparar avisos para o grupo (com prévia e confirmação), abrir chamados e consultar a agenda' : 'registrar e entregar encomendas, ver e atualizar chamados, abrir chamados, registrar manutenções feitas e consultar a agenda'}. Outros pedidos: explique com educação que é com o síndico ou a administração.` : ''}
 - ENCOMENDAS: "encomenda para 305 Julia" com foto = registrar_encomenda (apartamento 305, para Julia, com_foto=true se veio foto). Registre direto, sem pedir confirmação, e responda em uma linha: número da encomenda, apartamento e quantos moradores foram avisados. Se faltar o apartamento, pergunte só isso. Se vier só a foto sem apartamento, pergunte o apartamento.
 Hoje: ${hojeParaIA()}. Use isso para entender "amanhã", "terça", "dia 25" (sempre a próxima ocorrência a partir de hoje, no ano certo). Ao confirmar, escreva a data por extenso com o dia da semana.
-Condomínio em que você está trabalhando agora: ${cfg.nome_predio}.${(admin.condominios || []).length > 1 ? ` ${admin.nome} administra: ${admin.condominios.map((c) => c.nome).join(', ')}. Se ele pedir algo de outro prédio, use trocar_condominio e peça para repetir o pedido.` : ''}
+Condomínio em que você está trabalhando agora: ${cfg.nome_predio}.${(admin.condominios || []).length > 1 ? ` ${admin.nome} atende: ${admin.condominios.map((c) => c.nome).join(', ')}. Este pedido é do ${cfg.nome_predio} (o sistema já confirmou). Ao concluir uma ação, diga que foi no ${cfg.nome_predio}. Se no meio da conversa ele pedir algo de outro prédio, use trocar_condominio e peça para repetir o pedido citando o nome do prédio.` : ''}
 Grupo dos moradores configurado: ${cfg.grupo_nome || 'nenhum'}.
 ${canal === 'painel' ? 'Você está na tela Assistente do painel (sistema logado): pode cadastrar moradores.' : 'Você está no WhatsApp. Cadastro de moradores NÃO é feito por aqui: se pedirem, explique que o cadastro é só no painel, na página Moradores ou na tela Assistente.'}
 
@@ -413,6 +471,8 @@ async function atenderAdminWhatsApp(admin, tel, texto, midia = {}) {
     resposta = 'Tive um problema técnico para executar. Tente de novo ou use o painel.';
   }
   if (!resposta) return;
+  // Quem atende mais de um prédio sempre vê em qual prédio a ação foi feita
+  if ((admin.condominios || []).length > 1 && !resposta.startsWith('🏢')) resposta = `🏢 *${(await getConfig()).nome_predio}*\n${resposta}`;
   // Aviso preparado: botões para confirmar ou ajustar (plano B: responder sim)
   if (ctx.avisoPreparado) {
     await sv.enviarBotoes(tel, resposta, ['✅ Pode enviar|confirmar_aviso', '✏️ Quero ajustar|ajustar_aviso'], { planoB: 'Responda "sim" para enviar ou diga o que ajustar.', rotulo: ROTULO[admin.perfil] || 'você, como síndico' });
@@ -432,4 +492,4 @@ async function historicoPainel(usuarioId) {
   return ok(await db.from('mensagens').select('direcao, texto, criado_em').eq('telefone', `painel-${usuarioId}`).order('criado_em', { ascending: false }).limit(40)).reverse();
 }
 
-module.exports = { acharAdmin, atenderAdminWhatsApp, atenderAdminPainel, historicoPainel, _teste: { FERRAMENTAS, sistema, executar, podeUsar } };
+module.exports = { acharAdmin, escolherPredioDaEquipe, atenderAdminWhatsApp, atenderAdminPainel, historicoPainel, _teste: { FERRAMENTAS, sistema, executar, podeUsar, predioCitado, aguardandoPredio } };

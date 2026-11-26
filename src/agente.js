@@ -575,11 +575,16 @@ async function processar(tel) {
 
   return emSequencia(tel, async () => {
     // Número da administração: vira o assistente do síndico (comandos para avisos, agenda, chamados...)
-    const admin = await require('./agente_admin').acharAdmin(tel);
+    const equipe = require('./agente_admin');
+    const admin = await equipe.acharAdmin(tel);
     if (admin) {
-      // A imagem que o síndico mandou (para um aviso com imagem no grupo)
+      // Quem atende mais de um prédio: o prédio citado, o da conversa em andamento ou pergunta com botões
+      const escolha = await equipe.escolherPredioDaEquipe(admin, tel, texto);
+      if (!escolha) return;
+      admin.condominio_id = escolha.condominioId;
+      // A imagem que mandaram (aviso com imagem, foto da encomenda)
       const { foto } = midiaPendente(tel);
-      return noCondominio(admin.condominio_id, () => require('./agente_admin').atenderAdminWhatsApp(admin, tel, texto, { foto, limpar: () => midiasPendentes.delete(tel) }));
+      return noCondominio(admin.condominio_id, () => equipe.atenderAdminWhatsApp(admin, tel, escolha.texto, { foto, limpar: () => midiasPendentes.delete(tel) }));
     }
 
     // De qual condomínio é este morador. Número desconhecido: só o pedido de cadastro é atendido.
@@ -685,6 +690,7 @@ async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, 
     if (BOTOES[botao]) return BOTOES[botao];
     if (/^cad_[a-z0-9_-]+$/.test(botao)) return `[[${botao}]]`; // botões do autocadastro
     if (/^cond_[0-9a-f-]{36}$/.test(botao)) return `[[${botao}]]`; // escolha do condomínio
+    if (/^eqcond_[0-9a-f-]{36}$/.test(botao)) return `[[${botao}]]`; // equipe: escolha do prédio
     if (/^enc_retirei:\d+$/.test(botao)) return `[[${botao}]]`; // "Já retirei" da encomenda
     const voltou = /^reclamacao_voltou:(\d+)$/.exec(botao);
     if (voltou) return `O problema da reclamação nº ${voltou[1]} voltou a acontecer.`;
