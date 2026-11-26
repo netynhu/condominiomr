@@ -44,6 +44,40 @@ async function telefonesDaEquipe(perfis) {
   return usuarios.filter((u) => !u.dono && u.ativo && u.telefone && perfis.includes(u.perfil)).map((u) => u.telefone);
 }
 
+// ---------- Manutenção: quem recebe os chamados ----------
+// Horário de trabalho: { dias: [1..5], inicio: '08:00', fim: '17:00' } (0 = domingo). Sem horário = sempre disponível.
+function noTurno(turno) {
+  if (!turno || !Array.isArray(turno.dias) || !turno.inicio || !turno.fim) return true;
+  const { dataISO, hora, minuto } = agoraBR();
+  const dia = new Date(`${dataISO}T12:00:00-03:00`).getUTCDay();
+  const agora = hora * 60 + minuto;
+  const [hi, mi] = turno.inicio.split(':').map(Number);
+  const [hf, mf] = turno.fim.split(':').map(Number);
+  const ini = hi * 60 + mi; const fim = hf * 60 + mf;
+  if (ini <= fim) return turno.dias.includes(dia) && agora >= ini && agora < fim;
+  // Turno que passa da meia-noite (ex.: 22h às 6h): vale do início até a meia-noite no dia marcado e depois até o fim
+  const ontem = (dia + 6) % 7;
+  return (turno.dias.includes(dia) && agora >= ini) || (turno.dias.includes(ontem) && agora < fim);
+}
+
+// Telefones da manutenção para um chamado. O síndico escolhe em Ajustes: todos sempre, ou só quem está no horário.
+// Chamado urgente vai para todos. Se ninguém estiver no horário, vai para todos, marcado como fora do horário.
+async function telefonesManutencao(prioridade) {
+  const id = condominioAtual();
+  const cfg = await getConfig();
+  let links = await dbGlobal.from('usuario_condominios').select('usuario_id, turno').eq('condominio_id', id);
+  if (links.error) links = await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', id); // antes da migração 014
+  const turnos = Object.fromEntries((links.data || []).map((l) => [l.usuario_id, l.turno || null]));
+  const ids = Object.keys(turnos);
+  const equipe = ids.length ? ok(await dbGlobal.from('usuarios').select('id, telefone, perfil, ativo, dono').in('id', ids))
+    .filter((u) => !u.dono && u.ativo && u.telefone && u.perfil === 'zelador') : [];
+  if (!equipe.length) return { tels: [normalizarTelefone(cfg.telefone_zelador)].filter(Boolean), foraDoHorario: false };
+  const todos = [...new Set(equipe.map((u) => normalizarTelefone(u.telefone)).filter(Boolean))];
+  if (cfg.manutencao_envio !== 'horario' || prioridade === 'urgente') return { tels: todos, foraDoHorario: false };
+  const agora = [...new Set(equipe.filter((u) => noTurno(turnos[u.id])).map((u) => normalizarTelefone(u.telefone)).filter(Boolean))];
+  return agora.length ? { tels: agora, foraDoHorario: false } : { tels: todos, foraDoHorario: true };
+}
+
 // Envia direto (mensagens individuais e avisos à equipe). Grava no histórico quando é para morador.
 // rotulo: para quem é a mensagem (zelador, síndico...); hoje só informativo.
 // Alertas para a equipe começam com o nome do prédio: o mesmo síndico (ou o mesmo número) pode atender vários condomínios
@@ -137,14 +171,14 @@ async function abrirChamado({ morador, titulo, descricao, local, prioridade = 'n
     const url = env.APP_URL ? `${env.APP_URL}/z/${ch.id}` : '';
     const anexos = [foto && '📷 Tem foto', video && '🎥 Tem vídeo'].filter(Boolean).join(' · ');
     const msg = `${EMOJI_PRIORIDADE[prioridade]} ${corpo}${anexos ? `\n${anexos}` : ''}`;
-    for (const tel of await telefonesZeladores()) {
-      // Botão que abre o chamado direto no app do zelador (plano B: o link em texto)
-      if (url) await enviarBotoes(tel, msg, [`📋 Abrir chamado|${url}`], { rodape: 'App da manutenção', planoB: `👉 Toque para abrir: ${url}`, rotulo: 'zelador' });
-      else await enviar(tel, msg, null, 'zelador');
+    const { tels, foraDoHorario } = await telefonesManutencao(prioridade);
+    const texto = foraDoHorario ? `🌙 Fora do horário da equipe
+${msg}` : msg;
+    for (const tel of tels) {
+      // Botão que abre o chamado direto no app da manutenção (plano B: o link em texto)
+      if (url) await enviarBotoes(tel, texto, [`📋 Abrir chamado|${url}`], { rodape: 'App da manutenção', planoB: `👉 Toque para abrir: ${url}`, rotulo: 'zelador' });
+      else await enviar(tel, texto, null, 'zelador');
     }
-    await postarNoGrupoManutencao(`${msg}${url ? `
-
-👉 ${url}` : ''}`);
   }
   if (prioridade === 'urgente' || (prioridade === 'alta' && foraDoHorario())) {
     await avisarEquipe('sindico', `${EMOJI_PRIORIDADE[prioridade]} ${corpo}`);
@@ -160,11 +194,6 @@ async function mudarStatusChamado(id, status, observacao, usuarioNome, fotoConcl
   if (observacao) patch.observacao_equipe = observacao;
   if (status === 'resolvido') { patch.resolvido_em = agora; if (fotoConclusao) patch.foto_conclusao = fotoConclusao; }
   const ch = ok(await db.from('chamados').update(patch).eq('id', id).select('*, morador:moradores(*)').single());
-  if (status === 'resolvido' && ch.categoria !== 'administracao') {
-    await postarNoGrupoManutencao(`✅ Chamado nº ${id} resolvido: ${ch.titulo}${observacao ? `
-${observacao}` : ''}${usuarioNome ? `
-Por: ${usuarioNome}` : ''}`);
-  }
   await registrarHistoricoChamado(id, `Status: ${ROTULO_STATUS[status]}${observacao ? ` (${observacao})` : ''}${fotoConclusao ? ' com foto' : ''}`, usuarioNome);
   if (ch.morador && ch.morador.ativo) {
     const nome = primeiroNome(ch.morador.nome);
@@ -194,16 +223,6 @@ Por: ${usuarioNome}` : ''}`);
   return ch;
 }
 
-// Grupo da equipe de manutenção (opcional, em WhatsApp > Grupos): recebe os chamados novos e os resolvidos
-async function postarNoGrupoManutencao(texto) {
-  const cfg = await getConfig();
-  if (!cfg.grupo_manutencao_jid || cfg.grupo_manutencao_jid === cfg.grupo_jid) return false;
-  try {
-    await uazapi.enviarNoGrupo(cfg.grupo_manutencao_jid, `🏢 *${cfg.nome_predio}*
-${texto}`);
-    return true;
-  } catch (e) { console.error('[grupo manutenção]', e.message); return false; }
-}
 
 // Avisos oficiais no grupo dos moradores (o assistente não conversa no grupo, só posta)
 async function postarNoGrupo(titulo, texto, imagemId) {
@@ -368,6 +387,6 @@ async function enfileirar(publico, texto, avisoId) {
 }
 
 module.exports = {
-  acharMorador, moradorEmTodos, telefonesDaEquipe, telefonesDoPapel, condominiosDoUsuario, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
+  acharMorador, moradorEmTodos, telefonesDaEquipe, telefonesDoPapel, telefonesManutencao, noTurno, condominiosDoUsuario, enviar, enviarBotoes, avisarEquipe, atualizarReclamacao, reabrirReclamacao, boasVindas, boasVindasEmFila, abrirChamado, mudarStatusChamado, registrarReclamacao,
   registrarHistoricoChamado, unidadeId, enfileirar, destinatarios, chaveUnidade, unidadeDaVaga, postarNoGrupo, telefonesZeladores, ROTULO_STATUS,
 };

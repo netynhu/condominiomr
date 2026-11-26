@@ -4,6 +4,18 @@ const { setConfig, getConfig } = require('../db');
 const uazapi = require('../uazapi');
 const { a, exigir, exigirDono, exigirGestor, avisar } = require('./comum');
 
+// { jid do grupo: nome do condomínio } dos grupos escolhidos por outros condomínios
+async function gruposDeOutros(condominioId) {
+  const { dbGlobal } = require('../db');
+  const [linhas, conds] = await Promise.all([
+    dbGlobal.from('config').select('condominio_id, valor').eq('chave', 'grupo_jid').neq('valor', ''),
+    dbGlobal.from('condominios').select('id, nome'),
+  ]);
+  const mapa = {};
+  for (const l of linhas.data || []) if (l.condominio_id !== condominioId) mapa[l.valor] = (conds.data || []).find((c) => c.id === l.condominio_id)?.nome || 'outro condomínio';
+  return mapa;
+}
+
 const urlWebhook = () => `${env.APP_URL}/webhook/uazapi/${env.WEBHOOK_SECRET}`;
 
 router.get('/whatsapp', exigirGestor, a(async (req, res) => {
@@ -44,22 +56,20 @@ router.get('/whatsapp/grupos', exigir('admin'), a(async (req, res) => {
   let erro = null;
   try { grupos = await uazapi.listarGrupos(); } catch (e) { erro = e.message; }
   const cfg = await getConfig();
-  res.render('grupos', { titulo: 'Grupos', grupos, erro, atual: cfg.grupo_jid, manutencao: cfg.grupo_manutencao_jid });
+  // Grupos que já são de outro condomínio (o mesmo número está em grupos de vários prédios)
+  const outros = await gruposDeOutros(cfg.condominio_id);
+  for (const g of grupos) g.deOutro = outros[g.jid] || null;
+  res.render('grupos', { titulo: 'Grupo dos moradores', grupos, erro, atual: cfg.grupo_jid });
 }));
 
 router.post('/whatsapp/grupos', exigir('admin'), a(async (req, res) => {
+  const cfg = await getConfig();
+  const outros = await gruposDeOutros(cfg.condominio_id);
+  if (req.body.jid && outros[req.body.jid]) { avisar(req, `Esse grupo já é o grupo dos moradores do ${outros[req.body.jid]}.`, 'erro'); return res.redirect('/whatsapp/grupos'); }
   await setConfig({ grupo_jid: req.body.jid || '', grupo_nome: req.body.nome || '' });
   avisar(req, req.body.jid ? `O assistente passa a ler o grupo "${req.body.nome}".` : 'Leitura do grupo desligada.');
   res.redirect('/whatsapp/grupos');
 }));
 
-// Grupo da equipe de manutenção: recebe os chamados novos junto com o zelador
-router.post('/whatsapp/grupo-manutencao', exigir('admin'), a(async (req, res) => {
-  const cfg = await getConfig();
-  if (req.body.jid && req.body.jid === cfg.grupo_jid) { avisar(req, 'Esse é o grupo dos moradores. Escolha o grupo da equipe de manutenção.', 'erro'); return res.redirect('/whatsapp/grupos'); }
-  await setConfig({ grupo_manutencao_jid: req.body.jid || '', grupo_manutencao_nome: req.body.nome || '' });
-  avisar(req, req.body.jid ? `Os chamados novos também vão para o grupo "${req.body.nome}".` : 'Os chamados deixaram de ir para o grupo da manutenção.');
-  res.redirect('/whatsapp/grupos');
-}));
 
 module.exports = router;

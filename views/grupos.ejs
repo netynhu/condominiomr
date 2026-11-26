@@ -1,33 +1,25 @@
 <%- include('partials/topo') %>
-<div class="cabeca"><div><h1>Grupos<%= condominioAtual ? ' · ' + condominioAtual.nome : '' %></h1><p class="muted"><b>Grupo dos moradores:</b> o assistente lê e posta os avisos oficiais; nunca conversa. <b>Grupo da manutenção</b> (opcional): onde está a equipe de manutenção; os chamados novos e os resolvidos são postados lá também.</p></div>
+<div class="cabeca"><div><h1>Grupo dos moradores<%= condominioAtual ? ' · ' + condominioAtual.nome : '' %></h1>
+<p class="muted">Escolha qual dos grupos do WhatsApp é o dos moradores <b>deste condomínio</b>. O assistente lê o grupo, posta os avisos oficiais e usa o grupo para o cadastro dos moradores. Ele nunca conversa no grupo.</p></div>
 </div>
 <% if (erro) { %><div class="flash erro">Não foi possível listar os grupos: <%= erro %>. O WhatsApp está conectado?</div><% } %>
 <div class="card">
-  <% if (!grupos.length && !erro) { %><p class="muted">Nenhum grupo encontrado. O número do prédio precisa estar no grupo dos moradores.</p><% } %>
+  <p class="small muted">A lista mostra todos os grupos em que o número do assistente está (de todos os condomínios). Cada condomínio escolhe o seu, e um grupo só pode pertencer a um condomínio.</p>
+  <% if (!grupos.length && !erro) { %><p class="muted">Nenhum grupo encontrado. Adicione o número do assistente ao grupo dos moradores e volte aqui.</p><% } %>
   <div class="lista">
     <% for (const g of grupos) { %>
       <div class="item">
-        <div><b><%= g.nome %></b><div class="small muted"><%= g.jid %></div></div>
-        <div class="acoes equipe-acoes">
+        <div><b><%= g.nome %></b><% if (g.deOutro) { %><div class="small muted">já é o grupo do <%= g.deOutro %></div><% } %></div>
         <% if (g.jid === atual) { %>
-          <span class="tag resolvido">Grupo dos moradores</span>
-        <% } else if (g.jid === manutencao) { %>
-          <span class="tag aberto">Grupo da manutenção</span>
-        <% } else { %>
-          <form method="post" action="/whatsapp/grupos"><input type="hidden" name="jid" value="<%= g.jid %>"><input type="hidden" name="nome" value="<%= g.nome %>"><button class="btn sec peq" type="submit">Moradores</button></form>
-          <form method="post" action="/whatsapp/grupo-manutencao"><input type="hidden" name="jid" value="<%= g.jid %>"><input type="hidden" name="nome" value="<%= g.nome %>"><button class="btn sec peq" type="submit">Manutenção</button></form>
+          <span class="tag resolvido">Grupo deste condomínio</span>
+        <% } else if (!g.deOutro) { %>
+          <form method="post" action="/whatsapp/grupos"><input type="hidden" name="jid" value="<%= g.jid %>"><input type="hidden" name="nome" value="<%= g.nome %>"><button class="btn sec peq" type="submit">Usar neste condomínio</button></form>
         <% } %>
-        </div>
       </div>
     <% } %>
   </div>
-  <div class="acoes">
   <% if (atual) { %>
-    <form method="post" action="/whatsapp/grupos" data-confirmar="Parar de ler o grupo dos moradores?"><input type="hidden" name="jid" value=""><button class="btn perigo peq" type="submit">Parar de ler o grupo dos moradores</button></form>
+    <form method="post" action="/whatsapp/grupos" data-confirmar="Parar de usar o grupo dos moradores neste condomínio?"><input type="hidden" name="jid" value=""><button class="btn perigo peq" type="submit">Desligar o grupo</button></form>
   <% } %>
-  <% if (manutencao) { %>
-    <form method="post" action="/whatsapp/grupo-manutencao" data-confirmar="Parar de mandar os chamados para o grupo da manutenção?"><input type="hidden" name="jid" value=""><button class="btn sec peq" type="submit">Desligar grupo da manutenção</button></form>
-  <% } %>
-  </div>
 </div>
 <%- include('partials/rodape') %>

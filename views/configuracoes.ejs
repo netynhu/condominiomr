@@ -38,6 +38,13 @@
     <% } %>
   </div>
   <p class="small muted">Ninguém da equipe vê o nome de quem reclamou.</p>
+  <label>Chamados para a manutenção (quando há mais de uma pessoa)
+    <select name="manutencao_envio" id="manutencao_envio">
+      <option value="todos" <%= (c.manutencao_envio || 'todos') === 'todos' ? 'selected' : '' %>>Mandar para todos, sempre</option>
+      <option value="horario" <%= c.manutencao_envio === 'horario' ? 'selected' : '' %>>Mandar só para quem está no horário de trabalho</option>
+    </select>
+  </label>
+  <p class="small muted">O horário de cada pessoa fica em <a href="/equipe">Equipe e acessos</a> (Editar). Chamado urgente vai para todos. Se ninguém estiver no horário, o chamado vai para todos, marcado como "fora do horário da equipe".</p>
 
   <h2 style="margin-top:8px">Reclamações para o síndico</h2>
   <div class="linha-campos">

@@ -362,3 +362,6 @@ create table if not exists manutencao_registros (
 );
 create index if not exists manutencao_registros_idx on manutencao_registros (condominio_id, feita_em desc);
 alter table manutencao_registros enable row level security;
+
+-- 014: horário de trabalho da manutenção (por condomínio)
+alter table usuario_condominios add column if not exists turno jsonb;

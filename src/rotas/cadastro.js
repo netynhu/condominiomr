@@ -191,10 +191,28 @@ const { dbGlobal } = require('../db');
 const { condominioAtual } = require('../contexto');
 
 async function equipeDoCondominio() {
-  const ids = ok(await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', condominioAtual())).map((l) => l.usuario_id);
+  let links = await dbGlobal.from('usuario_condominios').select('usuario_id, turno').eq('condominio_id', condominioAtual());
+  if (links.error) links = await dbGlobal.from('usuario_condominios').select('usuario_id').eq('condominio_id', condominioAtual()); // antes da migração 014
+  const turnos = Object.fromEntries(ok(links).map((l) => [l.usuario_id, l.turno || null]));
+  const ids = Object.keys(turnos);
   if (!ids.length) return [];
   // O super admin (dono) não aparece na equipe de nenhum condomínio
-  return ok(await dbGlobal.from('usuarios').select('id, nome, email, perfil, telefone, ativo, dono, criado_em').in('id', ids).eq('dono', false).order('nome'));
+  const lista = ok(await dbGlobal.from('usuarios').select('id, nome, email, perfil, telefone, ativo, dono, criado_em').in('id', ids).eq('dono', false).order('nome'));
+  return lista.map((x) => ({ ...x, turno: turnos[x.id] }));
+}
+
+// Horário de trabalho da manutenção vindo do formulário (dias marcados + das/às)
+function turnoDoFormulario(body) {
+  const dias = [].concat(body.dias || []).map(Number).filter((n) => n >= 0 && n <= 6);
+  const hora = (v) => (/^\d{2}:\d{2}$/.test(String(v || '')) ? v : null);
+  if (!dias.length || !hora(body.turno_inicio) || !hora(body.turno_fim)) return null;
+  return { dias: [...new Set(dias)].sort(), inicio: body.turno_inicio, fim: body.turno_fim };
+}
+
+async function salvarTurno(usuarioId, perfil, body) {
+  if (perfil !== 'zelador') return;
+  const r = await dbGlobal.from('usuario_condominios').update({ turno: turnoDoFormulario(body) }).eq('usuario_id', usuarioId).eq('condominio_id', condominioAtual());
+  if (r.error) console.error('[turno]', r.error.message); // migração 014 ainda não rodou
 }
 
 async function daEquipe(usuarioId) {
@@ -254,6 +272,7 @@ router.post('/equipe', admin, a(async (req, res) => {
     if (senha) dados.senha_hash = await bcrypt.hash(senha, 10);
     if (id === req.session.usuario.id && (!dados.ativo || !['admin', 'sindico'].includes(perfil))) { avisar(req, 'Você não pode tirar o seu próprio acesso de administrador.', 'erro'); return res.redirect('/equipe'); }
     ok(await dbGlobal.from('usuarios').update(dados).eq('id', id));
+    await salvarTurno(id, perfil, req.body);
   } else {
     // E-mail que já tem acesso (ex.: síndico profissional de outro prédio): só liga ao condomínio da vez
     const [existe] = ok(await dbGlobal.from('usuarios').select('id, nome, dono').eq('email', dados.email).limit(1));
@@ -268,6 +287,7 @@ router.post('/equipe', admin, a(async (req, res) => {
       novoId = r.data.id;
     }
     ok(await dbGlobal.from('usuario_condominios').upsert({ usuario_id: novoId, condominio_id: condominioAtual() }, { onConflict: 'usuario_id,condominio_id' }));
+    await salvarTurno(novoId, perfil, req.body);
   }
   // O síndico cadastrado com WhatsApp passa a receber os alertas do síndico
   avisar(req, jaExistia
@@ -292,6 +312,7 @@ router.post('/configuracoes', admin, a(async (req, res) => {
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';
   v.autocadastro = req.body.autocadastro === 'on' ? '1' : '0';
+  v.manutencao_envio = req.body.manutencao_envio === 'horario' ? 'horario' : 'todos';
   v.encomenda_prazo_dias = String(Math.min(30, Math.max(1, parseInt(req.body.encomenda_prazo_dias, 10) || 7)));
   v.fora_assunto_limite = String(Math.min(10, Math.max(0, parseInt(req.body.fora_assunto_limite, 10) || 0)));
   v.fora_assunto_horas = String(Math.min(168, Math.max(1, parseInt(req.body.fora_assunto_horas, 10) || 12)));

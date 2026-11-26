@@ -1,5 +1,12 @@
 <%- include('partials/topo') %>
-<% const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Manutenção', portaria: 'Portaria', conselho: 'Conselho' }; %>
+<% const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Manutenção', portaria: 'Portaria', conselho: 'Conselho' };
+   const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+   const textoTurno = (t) => t && t.dias && t.dias.length ? `${t.dias.map((d) => DIAS[d]).join(', ')} · ${t.inicio} às ${t.fim}` : 'sem horário (recebe sempre)';
+   // Campos do horário de trabalho da manutenção
+   const camposTurno = (t, idBase) => `<fieldset class="turno" data-turno="${idBase}"><legend class="small" style="font-weight:600">Horário de trabalho neste condomínio</legend>
+     <div class="dias">${DIAS.map((n, i) => `<label class="check"><input type="checkbox" name="dias" value="${i}" ${t && t.dias && t.dias.includes(i) ? 'checked' : ''}> ${n}</label>`).join('')}</div>
+     <div class="linha-campos"><label>Das<input type="time" name="turno_inicio" value="${(t && t.inicio) || '08:00'}"></label><label>Às<input type="time" name="turno_fim" value="${(t && t.fim) || '17:00'}"></label></div>
+     <p class="small muted" style="margin:0">Sem nenhum dia marcado, a pessoa recebe os chamados a qualquer hora. Vale quando o síndico escolhe, em Ajustes, mandar os chamados só para quem está no horário.</p></fieldset>`; %>
 <div class="cabeca">
   <div><h1>Equipe e acessos</h1><p class="muted">Quem entra no sistema. Cada perfil vê só a sua parte. A equipe de manutenção entra pelo link enviado no WhatsApp, sem senha. Os outros perfis entram com e-mail e senha.</p></div>
 </div>
@@ -12,7 +19,7 @@
         <% for (const x of usuarios) { const semEmail = x.email.endsWith('@sem-email.local'); %>
           <tr>
             <td><b><%= x.nome %></b><div class="small muted"><%= semEmail ? 'entra pelo link' : x.email %><%= x.telefone ? ' · ' + u.formatarTelefone(x.telefone) : '' %></div></td>
-            <td><%= perfis[x.perfil] %></td>
+            <td><%= perfis[x.perfil] %><% if (x.perfil === 'zelador') { %><div class="small muted"><%= textoTurno(x.turno) %></div><% } %></td>
             <td><span class="tag <%= x.ativo ? 'resolvido' : '' %>"><%= x.ativo ? 'Ativo' : 'Bloqueado' %></span></td>
             <td>
               <div class="acoes equipe-acoes">
@@ -41,6 +48,7 @@
                       <label>Nova senha<input type="password" name="senha" minlength="8" placeholder="Deixe vazio para manter" autocomplete="new-password"></label>
                     </div>
                   <% } %>
+                  <% if (x.perfil === 'zelador') { %><%- camposTurno(x.turno, x.id) %><% } %>
                   <label class="check"><input type="checkbox" name="ativo" <%= x.ativo ? 'checked' : '' %>> Acesso ativo</label>
                   <div class="janela-acoes">
                     <% if (x.id !== usuario.id) { %><button class="btn perigo" type="submit" form="excluir-<%= x.id %>">Excluir acesso</button><% } %>
@@ -63,6 +71,7 @@
     <label>Perfil<select name="perfil" id="perfil"><% for (const [k, n] of Object.entries(perfis)) { %><option value="<%= k %>" <%= k === 'zelador' ? 'selected' : '' %>><%= n %></option><% } %></select></label>
     <label>Nome<input name="nome" id="nome" required></label>
     <label>WhatsApp<input name="telefone" id="telefone" inputmode="tel" placeholder="(11) 99999-8888"></label>
+    <div id="turno-novo"><%- camposTurno(null, 'novo') %></div>
     <div id="campos-senha" class="campos" style="display:flex;flex-direction:column;gap:14px">
       <label>E-mail<input type="email" name="email" id="email"></label>
       <label>Senha inicial (mínimo 8)<input type="password" name="senha" id="senha" minlength="8" autocomplete="new-password"></label>
@@ -94,6 +103,7 @@ document.addEventListener('click', (e) => {
     document.getElementById('email').required = !z;
     document.getElementById('senha').required = !z;
     document.getElementById('telefone').required = z;
+    document.getElementById('turno-novo').hidden = !z;
     document.getElementById('dica').textContent = dicas[perfil.value];
   }
   perfil.addEventListener('change', atualizar);

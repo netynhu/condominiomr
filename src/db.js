@@ -82,7 +82,8 @@ const PADRAO = {
   unidades_validas: '',                     // ex.: "101-110, 201-210" ou "A/101-104" (vazio = aceita qualquer número)
   autocadastro_reclamacao_conferido: '1',   // reclamação só depois que a administração conferir o cadastro
   fora_assunto_limite: '3',                 // perguntas fora do assunto (em 24h) até pausar o atendimento; 0 desliga
-  encomenda_prazo_dias: '7',               // dias parada na portaria até avisar a administração
+  encomenda_prazo_dias: '7',
+  manutencao_envio: 'todos',                // chamados para a manutenção: todos | horario (só quem está no horário de trabalho)               // dias parada na portaria até avisar a administração
   fora_assunto_horas: '12',                 // por quantas horas o atendimento fica pausado
   // Administradora do condomínio (boletos, 2ª via, acordos)
   adm_nome: '', adm_contato: '', adm_telefone: '', adm_whatsapp: '', adm_email: '', adm_portal: '', adm_horario: '', adm_observacoes: '',
