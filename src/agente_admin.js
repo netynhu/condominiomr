@@ -41,11 +41,28 @@ const aguardandoPredio = new Map(); // telefone -> { texto, em }
 const normal = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const COMUNS = new Set(['edificio', 'condominio', 'residencial', 'predio', 'torre', 'torres', 'parque', 'jardim', 'jardins', 'conjunto', 'residence', 'village', 'bloco', 'vila', 'solar', 'home', 'parada', 'vista', 'alto', 'central', 'nova', 'novo', 'santa', 'santo', 'park', 'plaza', 'garden', 'flores', 'bela', 'belo', 'sul', 'norte', 'leste', 'oeste', 'mais']);
 
+// O nome do prédio aparece no texto como prédio, e não como nome de pessoa?
+// "Encomenda para Teste do 302" fala da moradora Teste, não do condomínio Teste.
+const PREPOSICAO = new Set(['no', 'na', 'o', 'a', 'do', 'da', 'condominio', 'predio', 'edificio', 'residencial', 'torre', 'em']);
+function citaComoPredio(t, nome) {
+  const palavras = nome.split(' ');
+  let i = t.indexOf(` ${nome} `);
+  while (i >= 0) {
+    const antes = t.slice(0, i).trim().split(' ').pop();
+    const depois = t.slice(i + nome.length + 2).trim().split(' ');
+    const ehPessoa = /^\d/.test(depois[0] || '') || (['do', 'da', 'apto', 'ap', 'apartamento', 'bloco'].includes(depois[0]) && /^\d/.test(depois[1] || ''));
+    // Nome de uma palavra só ("Teste", "Smile"): precisa de "no/do/condomínio..." antes, para não confundir com pessoa
+    if (!ehPessoa && (palavras.length > 1 || PREPOSICAO.has(antes))) return true;
+    i = t.indexOf(` ${nome} `, i + 1);
+  }
+  return false;
+}
+
 function predioCitado(texto, lista) {
   const t = ` ${normal(texto).replace(/[^a-z0-9]+/g, ' ')} `;
-  const nomeTodo = lista.filter((c) => t.includes(` ${normal(c.nome).replace(/[^a-z0-9]+/g, ' ').trim()} `));
+  const nomeTodo = lista.filter((c) => citaComoPredio(t, normal(c.nome).replace(/[^a-z0-9]+/g, ' ').trim()));
   if (nomeTodo.length === 1) return nomeTodo[0];
-  const porPalavra = lista.filter((c) => normal(c.nome).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !COMUNS.has(w)).some((w) => t.includes(` ${w} `)));
+  const porPalavra = lista.filter((c) => normal(c.nome).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !COMUNS.has(w)).some((w) => citaComoPredio(t, w)));
   return porPalavra.length === 1 ? porPalavra[0] : null;
 }
 
