@@ -784,12 +784,20 @@ async function receberMensagemPrivada(ev) {
 // ele recebe uma mensagem no privado oferecendo abrir o chamado (no máximo uma vez a cada 24h).
 async function avaliarMensagemDoGrupo(morador, texto) {
   if (!morador || !morador.ativo || String(texto).length < 12) return;
-  if (morador.abordado_grupo_em && Date.now() - new Date(morador.abordado_grupo_em).getTime() < 24 * 3600000) return;
+  // Não insiste: o mesmo assunto não é oferecido de novo em 24h, e no máximo 3 convites por dia.
+  // Um problema diferente (ex.: elevador de manhã, portão da piscina à tarde) recebe o seu convite.
+  const desde = new Date(Date.now() - 24 * 3600000).toISOString();
+  const convites = ok(await db.from('mensagens').select('texto').eq('morador_id', morador.id).eq('direcao', 'saida')
+    .like('texto', '%Vi sua mensagem no grupo sobre%').gte('criado_em', desde).limit(10))
+    .map((m) => (/Vi sua mensagem no grupo sobre (.+?)\. Quer que eu abra/.exec(m.texto) || [])[1]).filter(Boolean);
+  if (new Set(convites).size >= 3) return;
+  const abertos = ok(await db.from('chamados').select('titulo').eq('morador_id', morador.id).in('status', ['aberto', 'em_andamento']).limit(10)).map((c) => c.titulo);
+  const jaTratados = [...new Set([...convites, ...abertos])];
 
   let r;
   try {
     const bruto = await completar(
-      'Você lê mensagens do grupo de WhatsApp de um condomínio. Diga se a mensagem relata um problema concreto nas áreas comuns ou na estrutura do prédio que a equipe deveria resolver (algo quebrado, vazamento, sujeira, falta de luz/água, portão, elevador, segurança). Conversas, piadas, avisos, vendas e opiniões não contam. Responda só JSON: {"problema": true|false, "resumo": "até 8 palavras, ex.: o portão da garagem travado"}',
+      `Você lê mensagens do grupo de WhatsApp de um condomínio. Diga se a mensagem relata um problema concreto nas áreas comuns ou na estrutura do prédio que a equipe deveria resolver (algo quebrado, vazamento, sujeira, falta de luz/água, portão, elevador, segurança). Conversas, piadas, avisos, vendas e opiniões não contam.${jaTratados.length ? ` Este morador já foi atendido hoje sobre: ${jaTratados.join('; ')}. Se a mensagem for sobre um desses mesmos problemas, responda problema=false.` : ''} Responda só JSON: {"problema": true|false, "resumo": "até 8 palavras, ex.: o portão da garagem travado"}`,
       String(texto).slice(0, 800),
       { maxTokens: 60, temperatura: 0 },
     );
