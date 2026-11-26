@@ -388,3 +388,7 @@ create table if not exists importacao_paginas (
   primary key (importacao_id, pagina)
 );
 alter table importacao_paginas enable row level security;
+
+-- 016: mensagens do grupo sem repetição (ver supabase/migracoes/016_grupo_sem_repeticao.sql)
+alter table grupo_mensagens add column if not exists wa_id text;
+create unique index if not exists grupo_mensagens_wa_id_uniq on grupo_mensagens (condominio_id, wa_id) where wa_id is not null;

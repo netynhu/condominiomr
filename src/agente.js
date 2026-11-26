@@ -802,4 +802,4 @@ async function avaliarMensagemDoGrupo(morador, texto) {
     ['🔧 Abrir chamado|abrir_chamado_grupo', 'Não precisa|nao_precisa'], { planoB: 'É só responder aqui.', moradorId: morador.id });
 }
 
-module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, _teste: { montarParteFixa, FERRAMENTAS, responder } };
+module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, transcreverAudio, _teste: { montarParteFixa, FERRAMENTAS, responder } };

@@ -49,6 +49,33 @@ async function ecoDoSistema(ev) {
   });
 }
 
+// Mensagens já recebidas (pelo id do WhatsApp), para ignorar a entrega repetida
+const recebidas = new Map();
+function jaRecebida(id) {
+  if (!id) return false;
+  const agora = Date.now();
+  for (const [k, t] of recebidas) if (agora - t > 10 * 60000) recebidas.delete(k);
+  if (recebidas.has(id)) return true;
+  recebidas.set(id, agora);
+  return false;
+}
+
+// Grava a mensagem do grupo. Devolve false se ela já estava gravada (entrega repetida em outro processo).
+async function gravarMensagemDoGrupo(linha) {
+  const r = await db.from('grupo_mensagens').insert(linha);
+  if (!r.error) return true;
+  if (r.error.code === '23505') return false; // mesma mensagem: já tratada
+  // Banco ainda sem a coluna wa_id (migração 016 não rodou): grava sem ela
+  if (/wa_id/.test(r.error.message)) {
+    const { wa_id: _, ...resto } = linha;
+    const r2 = await db.from('grupo_mensagens').insert(resto);
+    if (r2.error) console.error('[grupo]', r2.error.message);
+    return !r2.error;
+  }
+  console.error('[grupo]', r.error.message);
+  return false;
+}
+
 async function tratarWebhook(body) {
   const ev = uazapi.lerWebhook(body);
   if (ev.tipo === 'conexao') {
@@ -69,7 +96,9 @@ async function tratarWebhook(body) {
   }
 
   if (ev.ehGrupo) {
-    if (!ev.texto) return;
+    if (!ev.texto && ev.midia !== 'audio') return;
+    // A Uazapi entrega cada mensagem de grupo duas vezes: trata só a primeira
+    if (jaRecebida(ev.waId)) return;
     // De qual condomínio é este grupo (cada condomínio escolhe o seu grupo na página do WhatsApp)
     const donos = await dbGlobal.from('config').select('condominio_id').eq('chave', 'grupo_jid').eq('valor', ev.chatid);
     if (donos.error) return console.error('[grupo]', donos.error.message);
@@ -78,9 +107,18 @@ async function tratarWebhook(body) {
         const cfg = await getConfig();
         const { acharMorador } = require('./servicos');
         const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
-        await db.from('grupo_mensagens').insert({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: ev.texto.slice(0, 4000) });
+        let texto = ev.texto;
+        // Áudio no grupo: só de morador cadastrado (ouvir áudio de qualquer um custa caro)
+        if (!texto) {
+          if (!morador) return;
+          try { texto = await agente.transcreverAudio(ev.ids); } catch (e) { return console.error('[grupo] áudio', e.message); }
+          if (!texto) return;
+          texto = `[áudio] ${texto}`;
+        }
+        // O banco garante que a mesma mensagem não seja gravada (nem tratada) duas vezes
+        if (!(await gravarMensagemDoGrupo({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: texto.slice(0, 4000), wa_id: ev.waId || null }))) return;
         // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
-        if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, ev.texto);
+        if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, texto.replace(/^\[áudio\] /, ''));
       });
     }
     return;
