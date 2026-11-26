@@ -1,0 +1,68 @@
+<%- include('partials/topo') %>
+<% const perfis = { sindico: 'Síndico', admin: 'Administração', zelador: 'Manutenção', portaria: 'Portaria' };
+   const obrig = lista.itens.filter((i) => i.obrigatorio); const okObrig = obrig.filter((i) => i.ok).length; %>
+<div class="cabeca">
+  <div><h1>Implantação</h1><p class="muted">Mande a ficha para o síndico ou a administradora preencher. O que eles preenchem já entra no sistema. Abaixo, o que ainda falta para ativar o assistente neste condomínio.</p></div>
+</div>
+
+<div class="grade2">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="card">
+      <div class="acoes" style="justify-content:space-between">
+        <h2>Pronto para ativar</h2>
+        <span class="tag <%= lista.pronto ? 'resolvido' : 'alta' %>"><%= lista.pronto ? 'Pronto' : `${okObrig} de ${obrig.length} obrigatórios` %></span>
+      </div>
+      <div class="lista">
+        <% for (const i of lista.itens) { %>
+          <a class="item" href="<%= i.onde %>" style="color:inherit;text-decoration:none">
+            <div><%= i.ok ? '✅' : (i.obrigatorio ? '⬜' : '◻️') %> <b><%= i.texto %></b><%= i.obrigatorio ? '' : ' (opcional)' %>
+              <% if (i.dica && !i.ok) { %><div class="small muted"><%= i.dica %></div><% } %></div>
+            <% if (!i.ok) { %><span class="small" style="color:var(--accent)">Resolver ›</span><% } %>
+          </a>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (lista.equipeFicha.length) { %>
+    <div class="card">
+      <h2>Equipe informada na ficha</h2>
+      <div class="lista">
+        <% for (const p of lista.equipeFicha) { %>
+          <div class="item"><div><b><%= p.nome %></b> · <%= perfis[p.perfil] || p.perfil %>
+            <div class="small muted"><%= [p.whatsapp, p.email, p.horario].filter(Boolean).join(' · ') || 'sem contato' %></div></div></div>
+        <% } %>
+      </div>
+      <form method="post" action="/implantacao/equipe" data-confirmar="Criar os acessos da equipe informada na ficha? Quem já existe é só ligado a este condomínio."><button class="btn sec" type="submit">Criar acessos da equipe</button></form>
+      <p class="small muted">Depois, em Equipe e acessos: defina a senha de quem entra com e-mail e ajuste o horário de trabalho da manutenção.</p>
+    </div>
+    <% } %>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="card">
+      <h2>Ficha de implantação</h2>
+      <p class="small muted">Link sem senha. Funciona no celular. Mande para quem tem as informações do prédio.</p>
+      <input readonly value="<%= link %>" id="link-ficha" onclick="this.select()">
+      <div class="acoes">
+        <button class="btn" type="button" id="copiar">Copiar link</button>
+        <a class="btn sec" href="https://wa.me/?text=<%= encodeURIComponent(`Olá! Para implantar o assistente de WhatsApp do condomínio, preencha esta ficha (pode fazer em partes, pelo celular): ${link}`) %>" target="_blank" rel="noopener">Mandar pelo WhatsApp</a>
+        <a class="btn sec" href="<%= link %>" target="_blank" rel="noopener">Abrir</a>
+      </div>
+      <div class="lista">
+        <% partes.forEach((p, i) => { %>
+          <div class="item"><div><%= feitas.includes(p.id) ? '✅' : '⬜' %> <%= i + 1 %>. <%= p.titulo %></div></div>
+        <% }) %>
+      </div>
+      <p class="small muted"><%= concluida ? `Ficha enviada em ${u.dataHora(concluida)}.` : (atualizada ? `Última alteração em ${u.dataHora(atualizada)}.` : 'Ainda não preenchida.') %></p>
+      <form method="post" action="/implantacao/novo-link" data-confirmar="Criar um novo link? O link antigo deixa de funcionar."><button class="btn sec peq" type="submit">Gerar novo link</button></form>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('copiar').addEventListener('click', async () => {
+  const c = document.getElementById('link-ficha');
+  try { await navigator.clipboard.writeText(c.value); } catch { c.select(); document.execCommand('copy'); }
+  window.dialogo?.toast('Link copiado.');
+});
+</script>
+<%- include('partials/rodape') %>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0C1B1F">
+<title>Ficha de implantação · <%= cfg.nome_predio %></title>
+<link rel="icon" href="/static/icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/static/estilo.css?v=8">
+<style>
+  body{background:var(--bg)}
+  .fc{max-width:720px;margin:0 auto;padding:16px 16px 48px;display:flex;flex-direction:column;gap:14px}
+  .fc-topo{background:var(--side);color:#fff;border-radius:16px;padding:20px}
+  .fc-topo h1{color:#fff;font-size:1.4rem;margin:2px 0 6px}
+  .fc-topo small{color:var(--side-muted)}
+  .barra-progresso{height:8px;border-radius:99px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:10px}
+  .barra-progresso span{display:block;height:100%;background:var(--accent)}
+  .parte{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+  .parte>summary{list-style:none;cursor:pointer;padding:16px;display:flex;align-items:center;gap:12px;font-weight:700}
+  .parte>summary::-webkit-details-marker{display:none}
+  .parte>summary::before{display:none!important}
+  .parte .num{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--sunk);font-size:.85rem;flex:none}
+  .parte.feita .num{background:var(--accent);color:#fff}
+  .parte>form{padding:0 16px 16px;display:flex;flex-direction:column;gap:12px}
+  .linha-rep{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+  .ajuda{background:var(--sunk);border-radius:10px;padding:10px 12px;font-size:.85rem;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<main class="fc">
+  <% const pct = Math.round((feitas.length / partes.length) * 100); %>
+  <div class="fc-topo">
+    <small>Ficha de implantação do assistente de WhatsApp</small>
+    <h1><%= cfg.nome_predio %></h1>
+    <small>Preencha as partes na ordem que preferir. Cada parte é salva na hora: pode parar e continuar depois, pelo mesmo link.</small>
+    <div class="barra-progresso" aria-label="<%= pct %>% preenchido"><span style="width:<%= pct %>%"></span></div>
+    <small><%= feitas.length %> de <%= partes.length %> partes preenchidas</small>
+  </div>
+
+  <% if (salvo === 'concluida') { %><div class="flash">✅ Ficha enviada. Obrigado! A equipe de implantação vai revisar e ativar o assistente. Você ainda pode corrigir qualquer parte por este link.</div>
+  <% } else if (salvo) { %><div class="flash" role="status">Parte salva. <%= aberta ? 'Siga para a próxima.' : '' %></div><% } %>
+
+  <% const parte = (id, n, conteudo) => { const p = partes.find((x) => x.id === id); return `<details class="parte ${feitas.includes(id) ? 'feita' : ''}" id="${id}" ${aberta === id || (!aberta && !feitas.length && n === 1) ? 'open' : ''}><summary><span class="num">${feitas.includes(id) ? '✓' : n}</span>${p.titulo}</summary><form method="post" action="/ficha/${token}/${id}">${conteudo}<button class="btn" type="submit">Salvar e continuar</button></form></details>`; };
+     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); %>
+
+  <%- parte('predio', 1, `
+    <label>Nome do condomínio<input name="nome_predio" value="${esc(cfg.nome_predio)}" required></label>
+    <label>Endereço<input name="endereco" value="${esc(cfg.endereco)}" placeholder="Rua, número, bairro, cidade"></label>
+    <label>Apartamentos do prédio<textarea name="unidades_validas" rows="3" placeholder="Ex.: 101-110, 201-210, 301-310&#10;Com blocos: A/101-104, B/101-104">${esc(cfg.unidades_validas)}</textarea></label>
+    <p class="ajuda">Use faixas separadas por vírgula, do primeiro ao último apartamento de cada andar. O assistente só aceita cadastro de moradores nesses apartamentos.</p>`) %>
+
+  <%- parte('documentos', 2, `
+    <p class="ajuda">O assistente responde às dúvidas dos moradores com base na <b>convenção</b> e no <b>regulamento interno</b>. Pode ser PDF escaneado.</p>
+    <label>Link dos documentos (Google Drive, Dropbox, OneDrive...)<input name="doc_link" value="${esc(cfg.ficha_doc_link)}" placeholder="https://..."></label>
+    <label class="check"><input type="checkbox" name="doc_por_email" ${cfg.ficha_doc_por_email === '1' ? 'checked' : ''}> Vou enviar os documentos por e-mail ou WhatsApp</label>`) %>
+
+  <%- parte('equipe', 3, `
+    <p class="ajuda"><b>Síndico</b>: recebe as urgências no WhatsApp. <b>Administração</b>: acessa o painel. <b>Manutenção</b>: recebe os chamados no WhatsApp (informe o horário de trabalho). <b>Portaria</b>: registra as encomendas. Quem acessa o painel precisa de e-mail.</p>
+    <div id="equipe-linhas">${(equipe.length ? equipe : [{ perfil: 'sindico' }, { perfil: 'zelador' }]).map((p) => `
+      <div class="linha-rep">
+        <div class="linha-campos"><label>Nome<input name="eq_nome" value="${esc(p.nome)}"></label>
+        <label>Função<select name="eq_perfil">${[['sindico', 'Síndico'], ['admin', 'Administração'], ['zelador', 'Manutenção'], ['portaria', 'Portaria']].map(([k, n]) => `<option value="${k}" ${p.perfil === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
+        <div class="linha-campos"><label>WhatsApp<input name="eq_whatsapp" value="${esc(p.whatsapp)}" inputmode="tel" placeholder="(11) 99999-8888"></label>
+        <label>E-mail<input type="email" name="eq_email" value="${esc(p.email)}"></label></div>
+        <label>Horário de trabalho (manutenção)<input name="eq_horario" value="${esc(p.horario)}" placeholder="Ex.: segunda a sexta, das 8h às 17h"></label>
+      </div>`).join('')}</div>
+    <button class="btn sec peq" type="button" data-mais="equipe-linhas" style="align-self:flex-start">+ Pessoa</button>`) %>
+
+  <%- parte('administradora', 4, `
+    <label>Horário de atendimento da administração do condomínio<input name="horario_administracao" value="${esc(cfg.horario_administracao)}" placeholder="Ex.: segunda a sexta, das 9h às 18h"></label>
+    <p class="ajuda">Quando o morador perguntar de boleto, 2ª via ou acordo, o assistente diz onde e com quem resolver. Ele nunca fala de valores.</p>
+    <div class="linha-campos"><label>Administradora<input name="adm_nome" value="${esc(cfg.adm_nome)}"></label><label>Falar com<input name="adm_contato" value="${esc(cfg.adm_contato)}" placeholder="Nome do contato"></label></div>
+    <label>Site ou portal da 2ª via<input name="adm_portal" value="${esc(cfg.adm_portal)}" placeholder="https://..."></label>
+    <div class="linha-campos"><label>WhatsApp<input name="adm_whatsapp" value="${esc(cfg.adm_whatsapp)}" inputmode="tel"></label><label>Telefone<input name="adm_telefone" value="${esc(cfg.adm_telefone)}" inputmode="tel"></label></div>
+    <div class="linha-campos"><label>E-mail<input type="email" name="adm_email" value="${esc(cfg.adm_email)}"></label><label>Horário<input name="adm_horario" value="${esc(cfg.adm_horario)}"></label></div>`) %>
+
+  <%- parte('horarios', 5, `
+    <p class="ajuda">Escreva como o morador entenderia, com dias e horas. Se a convenção e o regulamento disserem coisas diferentes, escreva o que vale hoje.</p>
+    <label>Obras, reformas e serviços nos apartamentos<input name="horario_obras" value="${esc(cfg.horario_obras)}"></label>
+    <label>Mudanças<input name="horario_mudancas" value="${esc(cfg.horario_mudancas)}"></label>
+    <label>Horário de silêncio<input name="horario_silencio" value="${esc(cfg.horario_silencio)}"></label>`) %>
+
+  <%- parte('dia_a_dia', 6, `
+    <p class="ajuda">São as dúvidas mais comuns dos moradores. Deixe em branco o que não se aplica.</p>
+    <label>Lixo: onde e quando descartar<textarea name="regra_lixo" rows="2" placeholder="Ex.: a qualquer hora, no térreo, na área do estacionamento; a equipe leva para a rua">${esc(cfg.regra_lixo)}</textarea></label>
+    <label>Encomendas: quem recebe, onde ficam, fora do horário<textarea name="regra_encomendas" rows="2" placeholder="Ex.: a portaria recebe das 8h às 17h; depois disso, ficam na recepção">${esc(cfg.regra_encomendas)}</textarea></label>
+    <label>Reservas (salão, churrasqueira...): como e com quanto tempo de antecedência<textarea name="regra_reservas" rows="2" placeholder="Ex.: pelo aplicativo, com 5 dias de antecedência">${esc(cfg.regra_reservas)}</textarea></label>
+    <label>Piscina, academia e áreas de lazer: horários e regras<textarea name="regra_lazer" rows="2">${esc(cfg.regra_lazer)}</textarea></label>
+    <label>Outras regras importantes<textarea name="regra_outros" rows="2" placeholder="Ex.: pets, bicicletas, visitantes, entregadores, vagas de garagem">${esc(cfg.regra_outros)}</textarea></label>`) %>
+
+  <%- parte('manutencoes', 7, `
+    <p class="ajuda">Assim o assistente responde perguntas como "quando foi a última limpeza da caixa d'água?" e avisa quando a próxima estiver chegando. Preencha as que souber.</p>
+    <div id="manut-linhas">${(manut.length ? manut : sugeridas.map((item) => ({ item }))).map((x) => `
+      <div class="linha-rep">
+        <label>Manutenção<input name="mn_item" value="${esc(x.item)}"></label>
+        <div class="linha-campos"><label>Última vez<input type="date" name="mn_data" value="${esc(x.data)}"></label>
+        <label>Empresa<input name="mn_empresa" value="${esc(x.empresa)}"></label>
+        <label>Repete a cada<select name="mn_meses">${[[0, 'não sei'], [1, '1 mês'], [3, '3 meses'], [6, '6 meses'], [12, '1 ano'], [24, '2 anos'], [36, '3 anos']].map(([v, n]) => `<option value="${v}" ${Number(x.meses) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
+      </div>`).join('')}</div>
+    <button class="btn sec peq" type="button" data-mais="manut-linhas" style="align-self:flex-start">+ Manutenção</button>`) %>
+
+  <%- parte('espacos', 8, `
+    <p class="ajuda">Opcional. Para cada espaço reservável, liste o que o morador confere no início e no fim da reserva (um item por linha). Escreva "(foto)" no fim do item que precisa de foto.</p>
+    <div id="espaco-linhas">${(espacos.length ? espacos.map((e) => ({ nome: e.nome, itens: e.itens.map((i) => i.texto + (i.foto ? ' (foto)' : '')).join('\n') })) : [{ nome: '', itens: '' }]).map((e) => `
+      <div class="linha-rep">
+        <label>Espaço<input name="es_nome" value="${esc(e.nome)}" placeholder="Ex.: Espaço gourmet"></label>
+        <label>Itens do checklist<textarea name="es_itens" rows="4" placeholder="Churrasqueira limpa (foto)&#10;20 cadeiras&#10;Geladeira vazia">${esc(e.itens)}</textarea></label>
+      </div>`).join('')}</div>
+    <button class="btn sec peq" type="button" data-mais="espaco-linhas" style="align-self:flex-start">+ Espaço</button>`) %>
+
+  <%- parte('grupo', 9, `
+    <p class="ajuda">O assistente usa o grupo dos moradores para postar os avisos oficiais e para os moradores se cadastrarem. Ele nunca conversa no grupo.</p>
+    <p><b>1.</b> Adicione ao grupo dos moradores o número do assistente${numero ? `: <b>${u.formatarTelefone(numero)}</b>` : ''}.</p>
+    <label class="check"><input type="checkbox" name="grupo_ok" ${cfg.ficha_grupo_ok === '1' ? 'checked' : ''}> Já adicionei o número do assistente ao grupo</label>
+    <label><b>2.</b> Link de convite do grupo<input name="grupo_convite" value="${esc(cfg.grupo_convite)}" placeholder="https://chat.whatsapp.com/..."></label>
+    <p class="small muted" style="margin:0">No WhatsApp: abra o grupo &gt; Convidar via link &gt; Copiar link.</p>`) %>
+
+  <div class="card" id="fim">
+    <h2>Terminou?</h2>
+    <p class="muted"><%= feitas.length < partes.length ? `Faltam ${partes.length - feitas.length} parte(s). Você pode enviar assim mesmo e completar depois.` : 'Todas as partes estão preenchidas.' %></p>
+    <form method="post" action="/ficha/<%= token %>/concluir"><button class="btn" type="submit">Enviar ficha para a implantação</button></form>
+  </div>
+</main>
+<script>
+// "+ Pessoa / + Manutenção / + Espaço": copia a última linha, vazia
+document.querySelectorAll('[data-mais]').forEach((b) => b.addEventListener('click', () => {
+  const box = document.getElementById(b.dataset.mais);
+  const nova = box.lastElementChild.cloneNode(true);
+  nova.querySelectorAll('input, textarea').forEach((c) => { c.value = ''; });
+  nova.querySelectorAll('select').forEach((s) => { s.selectedIndex = 0; });
+  box.appendChild(nova);
+  nova.querySelector('input, textarea')?.focus();
+}));
+</script>
+</body>
+</html>

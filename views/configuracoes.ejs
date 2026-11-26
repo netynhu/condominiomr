@@ -110,6 +110,14 @@
   <label class="check"><input type="checkbox" name="autocadastro_reclamacao_conferido" id="autocadastro_reclamacao_conferido" <%= c.autocadastro_reclamacao_conferido !== '0' ? 'checked' : '' %>> Só liberar reclamações depois que a administração conferir o cadastro</label>
   <p class="small muted">Evita que alguém se cadastre no apartamento errado para reclamar de um vizinho. Chamados e dúvidas funcionam desde o primeiro dia.</p>
 
+  <h2 style="margin-top:8px">Regras do dia a dia</h2>
+  <p class="small muted">As dúvidas mais comuns dos moradores. Vêm da ficha de implantação e podem ser corrigidas aqui.</p>
+  <label>Lixo: onde e quando descartar<textarea name="regra_lixo" id="regra_lixo" rows="2"><%= c.regra_lixo || '' %></textarea></label>
+  <label>Encomendas: quem recebe, onde ficam, fora do horário<textarea name="regra_encomendas" id="regra_encomendas" rows="2"><%= c.regra_encomendas || '' %></textarea></label>
+  <label>Reservas de espaços<textarea name="regra_reservas" id="regra_reservas" rows="2"><%= c.regra_reservas || '' %></textarea></label>
+  <label>Piscina, academia e lazer<textarea name="regra_lazer" id="regra_lazer" rows="2"><%= c.regra_lazer || '' %></textarea></label>
+  <label>Outras regras<textarea name="regra_outros" id="regra_outros" rows="2"><%= c.regra_outros || '' %></textarea></label>
+
   <h2 style="margin-top:8px">Instruções extras para o assistente</h2>
   <label>Regras da casa que o assistente deve seguir<textarea name="instrucoes_extras" id="instrucoes_extras" placeholder="Ex.: Encomendas ficam na portaria até 7 dias. Para reservar o salão, encaminhe à administração."><%= c.instrucoes_extras %></textarea></label>
   <div class="acoes"><button class="btn" type="submit">Salvar</button></div>

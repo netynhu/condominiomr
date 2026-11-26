@@ -86,8 +86,8 @@ router.post('/condominios', exigirGestor, a(async (req, res) => {
   req.session.condominioId = c.id;
   req.session.condominios = null;
   await dbGlobal.from('usuarios').update({ condominio_atual: c.id }).eq('id', req.session.usuario.id);
-  avisar(req, `${nome} criado. Agora configure: documentos, ajustes do prédio, equipe e o grupo dos moradores.`);
-  res.redirect('/configuracoes');
+  avisar(req, `${nome} criado. Mande a ficha de implantação para o síndico ou a administradora preencher.`);
+  res.redirect('/implantacao');
 }));
 
 router.post('/condominios/:id', exigirGestor, a(async (req, res) => {

@@ -307,7 +307,7 @@ router.get('/configuracoes', admin, a(async (req, res) => {
 
 router.post('/configuracoes', admin, a(async (req, res) => {
   const campos = ['grupo_convite', 'nome_predio', 'nome_assistente', 'horario_administracao', 'instrucoes_extras', 'horario_obras', 'horario_mudancas', 'horario_silencio',
-    'adm_nome', 'adm_contato', 'adm_telefone', 'adm_whatsapp', 'adm_email', 'adm_portal', 'adm_horario', 'adm_observacoes'];
+    'regra_lixo', 'regra_encomendas', 'regra_reservas', 'regra_lazer', 'regra_outros', 'adm_nome', 'adm_contato', 'adm_telefone', 'adm_whatsapp', 'adm_email', 'adm_portal', 'adm_horario', 'adm_observacoes'];
   const v = {};
   for (const c of campos) v[c] = c.startsWith('telefone_') ? normalizarTelefone(req.body[c]) : (req.body[c] || '').trim();
   v.grupo_chamar_privado = req.body.grupo_chamar_privado === 'on' ? '1' : '0';

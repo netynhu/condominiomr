@@ -252,6 +252,12 @@ async function executar(nome, args, ctx) {
 //    A OpenAI reaproveita esse começo idêntico e cobra cerca de 1/4 do preço dele.
 // 2) parte variável (data/hora, quem está falando, memória), que vem depois.
 // Não coloque nada que muda (data, nome, número) dentro da parte fixa, senão o cache deixa de funcionar.
+// Regras do dia a dia vindas da ficha de implantação (lixo, encomendas, reservas, lazer)
+function regrasDoDiaADia(cfg) {
+  const regras = [['Lixo', cfg.regra_lixo], ['Encomendas', cfg.regra_encomendas], ['Reservas de espaços', cfg.regra_reservas], ['Piscina, academia e lazer', cfg.regra_lazer], ['Outras regras', cfg.regra_outros]].filter(([, v]) => v);
+  return regras.length ? `\nREGRAS DO DIA A DIA (informadas pela administração; valem como informação oficial)\n${regras.map(([n, v]) => `- ${n}: ${v}`).join('\n')}\n` : '';
+}
+
 async function montarParteFixa(cfg) {
   const docs = ok(await db.from('documentos').select('titulo, conteudo').eq('ativo', true).order('criado_em'));
   let textoDocs = docs.map((d) => `### ${d.titulo}\n${d.conteudo}`).join('\n\n');
@@ -317,7 +323,7 @@ REGRA ANTES DE REGISTRAR RECLAMAÇÃO DE BARULHO, OBRA, SERVIÇO OU MUDANÇA:
 
 ACOMPANHAMENTO DE RECLAMAÇÕES
 - Quando uma reclamação do morador foi resolvida e ele disser que o problema continua ou voltou, use reabrir_reclamacao com o número dela, em vez de abrir uma nova.
-${cfg.instrucoes_extras ? `\nINSTRUÇÕES DA ADMINISTRAÇÃO\n${cfg.instrucoes_extras}\n` : ''}${textoAprendido}
+${cfg.instrucoes_extras ? `\nINSTRUÇÕES DA ADMINISTRAÇÃO\n${cfg.instrucoes_extras}\n` : ''}${regrasDoDiaADia(cfg)}${textoAprendido}
 DOCUMENTOS DO CONDOMÍNIO
 ${textoDocs || '(nenhum documento cadastrado ainda: encaminhe dúvidas de regras à administração)'}`;
 }
