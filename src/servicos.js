@@ -229,7 +229,8 @@ async function postarNoGrupo(titulo, texto, imagemId) {
   const cfg = await getConfig();
   if (!cfg.grupo_jid) throw new Error('Escolha o grupo dos moradores na página do WhatsApp antes de postar avisos.');
   const limpo = String(texto || '').replaceAll('{nome}', '').replace(/^\s*Olá,?\s*!?\s*/i, '').trim();
-  const msg = [titulo && `📢 *${titulo}*`, limpo, `_${cfg.nome_predio} · Administração_`].filter(Boolean).join('\n\n');
+  // Imagem sem texto: pediram para postar só a imagem, sem legenda nenhuma
+  const msg = imagemId && !limpo ? '' : [titulo && `📢 *${titulo}*`, limpo, `_${cfg.nome_predio} · Administração_`].filter(Boolean).join('\n\n');
   if (imagemId) {
     // Aviso com imagem: a imagem vai com o título e o texto como legenda
     const { buffer } = await lerFoto(imagemId);

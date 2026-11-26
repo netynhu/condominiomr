@@ -103,15 +103,16 @@ const FERRAMENTAS = [
         texto: { type: 'string', description: 'Texto claro e educado, sem saudação inicial' },
         canal: { type: 'string', enum: ['grupo', 'privado'], description: 'grupo (padrão) ou privado de cada morador' },
         bloco: { type: 'string', description: 'Só para canal privado: limitar a um bloco' },
-        com_imagem: { type: 'boolean', description: 'true quando o síndico mandou uma imagem (cartaz, comunicado) para ir junto no grupo. Só funciona no canal grupo.' },
+        com_imagem: { type: 'boolean', description: 'true quando mandaram uma imagem (cartaz, comunicado) para ir junto no grupo, agora ou no rascunho anterior (ao ajustar, a imagem do rascunho é reaproveitada). Só funciona no canal grupo.' },
+        so_imagem: { type: 'boolean', description: 'true quando pedirem para postar SÓ a imagem, sem palavras: vai sem título, sem texto e sem assinatura. Título e texto podem ficar vazios.' },
       },
-      required: ['titulo', 'texto'],
+      required: [],
     },
   },
   {
     name: 'enviar_aviso_confirmado',
-    description: 'Envia um aviso que você preparou. Use SOMENTE depois que o síndico respondeu claramente que pode enviar (sim, pode, manda, ok) para ESTE aviso.',
-    parameters: { type: 'object', properties: { aviso_id: { type: 'string' } }, required: ['aviso_id'] },
+    description: 'Envia o aviso que você preparou (o último rascunho). Use SOMENTE depois que responderam claramente que pode enviar (sim, pode, manda, ok). NÃO prepare o aviso de novo para enviar: só chame esta ferramenta. aviso_id é opcional.',
+    parameters: { type: 'object', properties: { aviso_id: { type: 'string', description: 'Opcional. Sem ele, envia o último rascunho desta pessoa.' } } },
   },
   {
     name: 'criar_evento',
@@ -301,20 +302,39 @@ async function executar(nome, args, ctx) {
     case 'preparar_aviso': {
       const canal = args.canal === 'privado' ? 'privado' : 'grupo';
       const publico = canal === 'privado' && args.bloco ? `bloco:${String(args.bloco).trim().toUpperCase()}` : 'todos';
-      if (args.com_imagem && !ctx.foto) return { ok: false, erro: 'Não recebi a imagem. Peça para o síndico mandar a imagem de novo, junto com o pedido.' };
-      if (args.com_imagem && canal !== 'grupo') return { ok: false, erro: 'Aviso com imagem só pode ir para o grupo.' };
-      const dados = { titulo: args.titulo, texto: args.texto, canal, publico, criado_por: `${admin.nome} (WhatsApp)` };
-      if (args.com_imagem) { dados.imagem = ctx.foto; ctx.limparMidia?.(); }
+      const soImagem = Boolean(args.so_imagem);
+      const comImagem = Boolean(args.com_imagem || soImagem);
+      let imagem = comImagem ? ctx.foto : null;
+      // Ajuste de um aviso com imagem: a imagem já está no rascunho anterior desta pessoa
+      if (comImagem && !imagem) {
+        const [anterior] = ok(await db.from('avisos').select('imagem').eq('criado_por', `${admin.nome} (WhatsApp)`).eq('status', 'rascunho').not('imagem', 'is', null)
+          .gte('criado_em', new Date(Date.now() - 2 * 3600000).toISOString()).order('criado_em', { ascending: false }).limit(1));
+        imagem = anterior?.imagem || null;
+      }
+      if (comImagem && !imagem) return { ok: false, erro: 'Não recebi a imagem. Peça para mandar a imagem de novo, junto com o pedido.' };
+      if (comImagem && canal !== 'grupo') return { ok: false, erro: 'Aviso com imagem só pode ir para o grupo.' };
+      if (!soImagem && (!String(args.titulo || '').trim() || !String(args.texto || '').trim())) return { ok: false, erro: 'Falta o título ou o texto do aviso.' };
+      // Só a imagem: vai sem legenda nenhuma (o título fica só para o histórico do painel)
+      const dados = soImagem
+        ? { titulo: String(args.titulo || '').trim() || 'Imagem no grupo', texto: '', canal, publico, criado_por: `${admin.nome} (WhatsApp)` }
+        : { titulo: args.titulo, texto: args.texto, canal, publico, criado_por: `${admin.nome} (WhatsApp)` };
+      if (imagem) { dados.imagem = imagem; if (imagem === ctx.foto) ctx.limparMidia?.(); }
       const av = ok(await db.from('avisos').insert(dados).select().single());
       const cfg = await getConfig();
-      const previa = canal === 'grupo'
-        ? `📢 *${av.titulo}*\n\n${av.texto}\n\n_${cfg.nome_predio} · Administração_`
-        : `Olá, (nome)!\n\n${av.titulo}\n\n${av.texto}`;
+      const previa = soImagem ? '(só a imagem, sem nenhum texto)'
+        : canal === 'grupo'
+          ? `📢 *${av.titulo}*\n\n${av.texto}\n\n_${cfg.nome_predio} · Administração_`
+          : `Olá, (nome)!\n\n${av.titulo}\n\n${av.texto}`;
       ctx.avisoPreparado = av.id;
       return { aviso_id: av.id, canal, com_imagem: Boolean(av.imagem), destino: canal === 'grupo' ? `grupo ${cfg.grupo_nome || '(nenhum grupo configurado!)'}` : (publico === 'todos' ? 'privado de todos os moradores' : `privado do bloco ${publico.slice(6)}`), previa };
     }
     case 'enviar_aviso_confirmado': {
-      const av = ok(await db.from('avisos').select('*').eq('id', args.aviso_id).maybeSingle());
+      // Sem o número do aviso (o histórico da conversa não guarda): vale o último rascunho desta pessoa
+      const porId = /^[0-9a-f-]{36}$/.test(String(args.aviso_id || ''));
+      const av = porId
+        ? ok(await db.from('avisos').select('*').eq('id', args.aviso_id).maybeSingle())
+        : ok(await db.from('avisos').select('*').eq('criado_por', `${admin.nome} (WhatsApp)`).eq('status', 'rascunho')
+          .gte('criado_em', new Date(Date.now() - 2 * 3600000).toISOString()).order('criado_em', { ascending: false }).limit(1))[0];
       if (!av || av.status !== 'rascunho') return { ok: false, erro: 'Aviso não encontrado ou já enviado.' };
       if (Date.now() - new Date(av.criado_em).getTime() > 2 * 3600000) return { ok: false, erro: 'Rascunho antigo. Prepare de novo.' };
       if (av.canal === 'grupo') {
@@ -423,7 +443,7 @@ ${canal === 'painel' ? 'Você está na tela Assistente do painel (sistema logado
 COMO TRABALHAR
 - Respostas curtas, próprias de WhatsApp. Sem markdown pesado.
 - Execute os pedidos com as ferramentas. Se faltar algo essencial (data, horário), pergunte uma coisa só.
-- AVISOS: sempre use preparar_aviso, mostre a prévia exatamente como vai sair e pergunte "Posso enviar?". Se o síndico mandou uma imagem (aparece como "[o morador enviou uma foto...]") e quer postar no grupo, use com_imagem=true e diga na prévia que a imagem vai junto. Só chame enviar_aviso_confirmado depois de um sim claro para aquele aviso. Se o síndico pedir mudança, prepare um novo rascunho.
+- AVISOS: sempre use preparar_aviso, mostre a prévia exatamente como vai sair e pergunte "Posso enviar?". Se o síndico mandou uma imagem (aparece como "[o morador enviou uma foto...]") e quer postar no grupo, use com_imagem=true e diga na prévia que a imagem vai junto. Só chame enviar_aviso_confirmado depois de um sim claro para aquele aviso. Se o síndico pedir mudança, prepare um novo rascunho (se o anterior tinha imagem, use com_imagem=true de novo: a imagem é reaproveitada, não peça para mandar outra vez). Se pedirem só a imagem, sem palavras/sem texto (já na primeira mensagem, ex.: imagem com a legenda "só manda a imagem, não escreve nada", ou depois, no ajuste), use so_imagem=true e diga que vai só a imagem, sem texto nenhum. Quando confirmarem o envio, chame só enviar_aviso_confirmado (sem preparar de novo).
 - Pedido de "aviso de manutenção/obra/reunião numa data": crie o evento na agenda (criar_evento) E prepare o aviso para o grupo, mostrando a prévia.
 - Ao atualizar chamado, confirme o número e o novo status.
 - Reclamações: nunca tente descobrir quem reclamou.
@@ -466,7 +486,16 @@ async function atenderAdminWhatsApp(admin, tel, texto, midia = {}) {
   ok(await db.from('mensagens').insert({ telefone: tel, direcao: 'entrada', texto }));
   let resposta;
   const ctx = { admin, foto: midia.foto || null, limparMidia: midia.limpar };
-  try { resposta = await responderAdmin(admin, tel, texto, ctx); } catch (e) {
+  // Tocou em "Pode enviar": envia o último rascunho direto, sem passar pela IA
+  if (/Sim, pode enviar o aviso\.\s*$/.test(texto)) {
+    try {
+      const r = await executar('enviar_aviso_confirmado', {}, ctx);
+      resposta = r.ok ? `✅ Aviso enviado: ${r.enviado}.` : `Não consegui enviar: ${r.erro} Se quiser, mande o pedido de novo.`;
+    } catch (e) {
+      console.error('[admin] enviar aviso', e.message);
+      resposta = `Não consegui enviar o aviso: ${e.message}`;
+    }
+  } else try { resposta = await responderAdmin(admin, tel, texto, ctx); } catch (e) {
     console.error('[admin] erro', e.message);
     resposta = 'Tive um problema técnico para executar. Tente de novo ou use o painel.';
   }
