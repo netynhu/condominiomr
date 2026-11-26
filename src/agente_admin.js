@@ -73,8 +73,10 @@ async function escolherPredioDaEquipe(admin, tel, texto) {
     return { condominioId: escolhido.id, texto: resto };
   }
 
-  // No meio de uma conversa: continua no mesmo prédio (ex.: "sim, pode enviar")
-  if (!pendente) {
+  // No meio de uma conversa: continua no mesmo prédio (ex.: "sim, pode enviar").
+  // Imagem nova é um pedido novo: sempre pergunta o prédio (a não ser que a legenda cite o nome).
+  const imagemNova = /\[o morador enviou uma foto/.test(texto);
+  if (!pendente && !imagemNova) {
     const [ultima] = ok(await dbGlobal.from('mensagens').select('condominio_id, criado_em').eq('telefone', tel).not('condominio_id', 'is', null)
       .gte('criado_em', new Date(Date.now() - CONVERSA_MS).toISOString()).order('criado_em', { ascending: false }).limit(1));
     if (ultima && lista.some((c) => c.id === ultima.condominio_id)) return { condominioId: ultima.condominio_id, texto };
@@ -464,10 +466,21 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
   const SO_NO_PAINEL = ['cadastrar_morador'];
   const tools = FERRAMENTAS.filter((f) => (ctx.canal === 'painel' ? f.name !== 'trocar_condominio' : !SO_NO_PAINEL.includes(f.name)))
     .filter((f) => podeUsar(admin, f.name)).map((f) => ({ type: 'function', function: f }));
+  let cobrado = false;
   for (let volta = 0; volta < 8; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.2 });
     const msg = r.choices[0].message;
-    if (!msg.tool_calls?.length) return (msg.content || '').trim();
+    if (!msg.tool_calls?.length) {
+      const final = (msg.content || '').trim();
+      // Escreveu uma prévia e perguntou "posso enviar?" sem criar o rascunho: o "sim" depois não teria o que enviar
+      if (!cobrado && !ctx.avisoPreparado && podeUsar(admin, 'preparar_aviso') && /posso (enviar|mandar|postar)|pr[eé]via do aviso/i.test(final)) {
+        cobrado = true;
+        mensagens.push({ role: 'assistant', content: final });
+        mensagens.push({ role: 'system', content: 'Você mostrou uma prévia, mas NÃO chamou preparar_aviso, então nada foi preparado. Chame preparar_aviso agora com esse aviso (com_imagem=true se havia imagem; so_imagem=true se é só a imagem) e depois responda com a prévia.' });
+        continue;
+      }
+      return final;
+    }
     mensagens.push(msg);
     for (const call of msg.tool_calls) {
       let resultado;
@@ -481,13 +494,53 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
   return 'Fiz o que consegui. Confira no painel.';
 }
 
+// Textos dos botões (iguais aos de BOTOES em agente.js)
+const BOTAO_PODE_ENVIAR = 'Sim, pode enviar o aviso.';
+const BOTAO_IMAGEM = {
+  so: 'Quero postar só a imagem no grupo, sem texto.',
+  texto: 'Quero postar a imagem no grupo com um texto. Prepare o aviso com a imagem (título e texto curtos, a partir do que aparece nela).',
+  encomenda: 'Esta imagem é de uma encomenda.',
+};
+
+// A última mensagem enviada a esta pessoa foi uma prévia de aviso (com os botões Pode enviar / Ajustar)?
+async function ultimaFoiPrevia(tel) {
+  const [m] = ok(await db.from('mensagens').select('texto, criado_em').eq('telefone', tel).eq('direcao', 'saida').order('criado_em', { ascending: false }).limit(1));
+  return Boolean(m && /Pode enviar/.test(m.texto) && Date.now() - new Date(m.criado_em).getTime() < 2 * 3600000);
+}
+
 // Mensagem da administração pelo WhatsApp
 async function atenderAdminWhatsApp(admin, tel, texto, midia = {}) {
   ok(await db.from('mensagens').insert({ telefone: tel, direcao: 'entrada', texto }));
   let resposta;
   const ctx = { admin, foto: midia.foto || null, limparMidia: midia.limpar };
-  // Tocou em "Pode enviar": envia o último rascunho direto, sem passar pela IA
-  if (/Sim, pode enviar o aviso\.\s*$/.test(texto)) {
+  const fazAviso = podeUsar(admin, 'preparar_aviso');
+  const imagem = fazAviso && ctx.foto && /\[o morador enviou uma foto/.test(texto);
+  const legenda = (/Legenda: "([^"]*)"/.exec(texto) || [])[1] || '';
+  const soImagem = (t) => /s[oó] ((manda|mande|envia|envie|posta|poste|coloca|coloque) )?(a |essa |esta )?(imagem|foto)|apenas (a )?(imagem|foto)|sem (texto|palavras?|legenda)|n[aã]o (escreve|escreva|coloque|p[oõ]e) (nada|texto)/i.test(t);
+
+  // "Só a imagem" (botão, legenda ou pedido escrito): prepara o rascunho direto, sem passar pela IA
+  if ((imagem && soImagem(legenda)) || (fazAviso && new RegExp(`${BOTAO_IMAGEM.so.replace('.', '\\.')}\\s*$`).test(texto))) {
+    const r = await executar('preparar_aviso', { so_imagem: true }, ctx);
+    resposta = r.erro
+      ? `Não achei a imagem: ${r.erro}`
+      : `Prévia: vai *só a imagem*, sem texto nenhum, no ${r.destino}.\n\nPosso enviar?`;
+  } else if (imagem && !/encomenda|pacote|correio|sedex|entrega|mercado ?livre|amazon|shopee/i.test(legenda)) {
+    // Imagem sem um pedido claro: pergunta com botões o que fazer com ela
+    const botoes = [`🖼️ Só a imagem|eqimg_so`, `📝 Imagem com texto|eqimg_texto`];
+    if (podeUsar(admin, 'registrar_encomenda')) botoes.push(`📦 É encomenda|eqimg_encomenda`);
+    let pergunta = 'Recebi a imagem. O que faço com ela?';
+    if ((admin.condominios || []).length > 1) pergunta = `🏢 *${(await getConfig()).nome_predio}*\n${pergunta}`;
+    await sv.enviarBotoes(tel, pergunta, botoes, { planoB: 'Responda: "só a imagem", "com texto" ou "é encomenda".', rotulo: ROTULO[admin.perfil] || 'você, como síndico' });
+    return;
+  } else if (new RegExp(`${BOTAO_IMAGEM.encomenda.replace('.', '\\.')}\\s*$`).test(texto)) {
+    resposta = 'Certo! Para qual apartamento (e para quem) é a encomenda?';
+  } else if (/^\s*(sim|pode|pode sim|pode enviar|pode mandar|manda|envia|ok|isso)[\s.!]*$/i.test(texto) && fazAviso && (await ultimaFoiPrevia(tel))) {
+    // "sim" escrito logo depois de uma prévia: mesmo caminho do botão "Pode enviar"
+    texto = BOTAO_PODE_ENVIAR;
+  }
+
+  if (resposta) { /* já respondido acima */ } else if (/Sim, pode enviar o aviso\.\s*$/.test(texto)) {
+    // Tocou em "Pode enviar": envia o último rascunho direto, sem passar pela IA
     try {
       const r = await executar('enviar_aviso_confirmado', {}, ctx);
       resposta = r.ok ? `✅ Aviso enviado: ${r.enviado}.` : `Não consegui enviar: ${r.erro} Se quiser, mande o pedido de novo.`;

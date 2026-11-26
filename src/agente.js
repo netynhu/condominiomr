@@ -702,6 +702,10 @@ const BOTOES = {
   nao_precisa: 'Não precisa, obrigado.',
   confirmar_aviso: 'Sim, pode enviar o aviso.',
   ajustar_aviso: 'Quero ajustar o aviso antes de enviar.',
+  // Equipe mandou uma imagem: o que fazer com ela (textos iguais aos de BOTAO_IMAGEM em agente_admin.js)
+  eqimg_so: 'Quero postar só a imagem no grupo, sem texto.',
+  eqimg_texto: 'Quero postar a imagem no grupo com um texto. Prepare o aviso com a imagem (título e texto curtos, a partir do que aparece nela).',
+  eqimg_encomenda: 'Esta imagem é de uma encomenda.',
 };
 
 // "Abrir chamado" do convite do grupo: diz exatamente qual problema (o da mensagem que gerou o convite),
