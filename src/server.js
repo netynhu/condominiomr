@@ -106,7 +106,10 @@ async function tratarWebhook(body) {
       await noCondominio(id, async () => {
         const cfg = await getConfig();
         const { acharMorador } = require('./servicos');
-        const morador = ev.telefone ? await acharMorador(ev.telefone) : null;
+        // Síndico, administração, portaria e zelador postam o que quiserem no grupo: o assistente nunca os questiona
+        // (nem quando o número também está cadastrado como morador)
+        const daEquipe = ev.telefone ? await require('./agente_admin').acharAdmin(ev.telefone).catch(() => null) : null;
+        const morador = ev.telefone && !daEquipe ? await acharMorador(ev.telefone) : null;
         let texto = ev.texto;
         // Áudio no grupo: só de morador cadastrado (ouvir áudio de qualquer um custa caro)
         if (!texto) {
@@ -116,7 +119,7 @@ async function tratarWebhook(body) {
           texto = `[áudio] ${texto}`;
         }
         // O banco garante que a mesma mensagem não seja gravada (nem tratada) duas vezes
-        const grupoMsgId = await gravarMensagemDoGrupo({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: texto.slice(0, 4000), wa_id: ev.waId || null });
+        const grupoMsgId = await gravarMensagemDoGrupo({ telefone: ev.telefone || null, nome: morador?.nome || daEquipe?.nome || ev.nome || null, morador_id: morador?.id || null, texto: texto.slice(0, 4000), wa_id: ev.waId || null });
         if (!grupoMsgId) return;
         // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
         if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, texto.replace(/^\[áudio\] /, ''), grupoMsgId);
