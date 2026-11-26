@@ -1,5 +1,5 @@
 // Autocadastro pelo grupo: quem está no grupo dos moradores manda "Quero me cadastrar" no privado
-// e o assistente pede os dados, um de cada vez. Quem não está no grupo é orientado a procurar a administração.
+// e o assistente pede os dados, um de cada vez. Quem não está em nenhum grupo não recebe resposta nenhuma.
 // A administração confere depois no painel (Moradores > Cadastros pelo grupo).
 const { db, dbGlobal, ok, getConfig, listarCondominios } = require('./db');
 const { noCondominio } = require('./contexto');
@@ -110,8 +110,6 @@ async function atender(tel, nomeWhatsapp, texto) {
   }
   const escolha = (/\[\[cad_cond_([0-9a-f-]{36})\]\]/.exec(texto) || [])[1];
   if (!escolha && !PEDIU_CADASTRO.test(texto)) return false;
-  const anterior = pendente?.dados || {};
-  if (!escolha && anterior.fora_do_grupo && Date.now() - new Date(anterior.fora_do_grupo).getTime() < DIA) return true; // não repete a orientação
 
   // Condomínios com cadastro pelo grupo ligado e cujo grupo tem este número
   const candidatos = [];
@@ -125,8 +123,8 @@ async function atender(tel, nomeWhatsapp, texto) {
   }
 
   if (!candidatos.length) {
+    // Fora de todos os grupos: o assistente não responde nada (fica só o registro do contato)
     await salvarPendente(tel, nomeWhatsapp, texto, { fora_do_grupo: new Date().toISOString() }, pendente);
-    await sv.enviar(tel, 'Olá! Não encontrei este número no grupo dos moradores de nenhum condomínio atendido por aqui, então não consigo fazer o seu cadastro.\n\nPor favor, procure a administração do seu condomínio para fazer o cadastro.');
     return true;
   }
   if (candidatos.length > 1) {
