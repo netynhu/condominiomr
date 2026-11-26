@@ -68,6 +68,8 @@ async function lembrarEventos() {
     .gt('inicio', new Date(agora).toISOString()).lte('inicio', new Date(agora + 24 * 3600000).toISOString()));
   for (const ev of l) {
     await db.from('eventos').update({ lembrete_enviado: true }).eq('id', ev.id);
+    // Evento cadastrado já dentro das 24h (ex.: "hoje às 22h30"): o aviso acabou de sair, o lembrete seria repetido
+    if (ev.criado_em && new Date(ev.criado_em).getTime() > new Date(ev.inicio).getTime() - 24 * 3600000) continue;
     const titulo = `Lembrete: ${ev.publico.startsWith('bloco:') ? `Bloco ${ev.publico.slice(6)} · ` : ''}${ev.titulo}`;
     const texto = `🗓️ ${dataExtenso(ev.inicio)}${ev.local ? `\n📍 ${ev.local}` : ''}${ev.descricao ? `\n\n${ev.descricao}` : ''}`;
     // Lembrete vai para o grupo (uma mensagem só). Sem grupo configurado, cai na fila do privado.
