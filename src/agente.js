@@ -35,6 +35,7 @@ const FERRAMENTAS = [
         local: { type: 'string', description: 'Onde fica o problema' },
         categoria: { type: 'string', enum: ['manutencao', 'limpeza', 'seguranca'] },
         prioridade: { type: 'string', enum: ['baixa', 'normal', 'alta', 'urgente'], description: 'urgente só para risco a pessoas, vazamento grande, elevador com gente presa, falta total de água ou luz' },
+        outro_problema: { type: 'boolean', description: 'Só true quando o sistema avisou que já existe um chamado parecido e o morador confirmou que é um problema diferente.' },
       },
       required: ['titulo', 'local', 'prioridade'],
     },
@@ -143,10 +144,28 @@ const FERRAMENTAS = [
   },
 ];
 
+// Chamado em aberto no prédio sobre o mesmo problema (últimos 14 dias), pelas palavras que importam
+// ("elevador", "academia", "portão"), sem contar palavras genéricas como "quebrado" ou "andar".
+const PALAVRAS_GENERICAS = new Set(['quebrado', 'quebrada', 'quebrou', 'problema', 'defeito', 'funciona', 'funcionando', 'parado', 'parada', 'andar', 'bloco', 'apto', 'apartamento', 'predio', 'condominio', 'area', 'areas', 'comum', 'comuns', 'queimada', 'queimado', 'nao', 'esta', 'estao', 'para', 'com', 'sem', 'perto', 'frente', 'lado', 'terreo', 'subsolo', 'manutencao', 'conserto', 'arrumar', 'verificar', 'precisa', 'acendem', 'acende']);
+const palavrasChave = (s) => new Set(String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9]+/)
+  .filter((w) => w.length >= 4 && !PALAVRAS_GENERICAS.has(w)).map((w) => w.replace(/(es|s)$/, '')));
+async function chamadoParecido(morador, texto) {
+  const alvo = palavrasChave(texto);
+  if (!alvo.size) return null;
+  const abertos = ok(await db.from('chamados').select('id, titulo, local, status').in('status', ['aberto', 'em_andamento'])
+    .gte('criado_em', new Date(Date.now() - 14 * 86400000).toISOString()).order('criado_em', { ascending: false }).limit(30));
+  return abertos.find((c) => [...palavrasChave(`${c.titulo} ${c.local || ''}`)].some((w) => alvo.has(w))) || null;
+}
+
 async function executar(nome, args, ctx) {
   const { morador } = ctx;
   switch (nome) {
     case 'abrir_chamado': {
+      // Já existe chamado aberto sobre o mesmo problema (ex.: elevador): não abre outro, a não ser que ele confirme que é outro
+      if (!args.outro_problema) {
+        const igual = await chamadoParecido(morador, `${args.titulo} ${args.local || ''}`);
+        if (igual) return { ok: false, ja_existe: true, numero: igual.id, titulo: igual.titulo, status: sv.ROTULO_STATUS[igual.status], instrucao: `Já existe o chamado nº ${igual.id} (${igual.titulo}) em aberto. Avise o morador e não abra outro. Só abra um novo, com outro_problema=true, se ele disser que é um problema diferente.` };
+      }
       const ch = await sv.abrirChamado({ morador, ...args, categoria: args.categoria || 'manutencao', foto: ctx.foto || null, video: ctx.video || null });
       ctx.acoes.push(`chamado ${ch.id}`);
       if (ctx.foto || ctx.video) ctx.limparMidias?.();
@@ -685,8 +704,27 @@ const BOTOES = {
   ajustar_aviso: 'Quero ajustar o aviso antes de enviar.',
 };
 
+// "Abrir chamado" do convite do grupo: diz exatamente qual problema (o da mensagem que gerou o convite),
+// para o assistente não confundir com outro assunto da conversa.
+async function pedidoDeChamadoDoGrupo(tel, botao) {
+  const { dbGlobal } = require('./db');
+  const { variantesTelefone } = require('./util');
+  const id = Number((/:(\d+)$/.exec(botao) || [])[1]);
+  let original = '';
+  if (id) {
+    const r = await dbGlobal.from('grupo_mensagens').select('texto').eq('id', id).maybeSingle();
+    original = r.data?.texto || '';
+  }
+  const convite = await dbGlobal.from('mensagens').select('texto').in('telefone', variantesTelefone(tel)).eq('direcao', 'saida')
+    .like('texto', '%Vi sua mensagem no grupo sobre%').order('criado_em', { ascending: false }).limit(1);
+  const assunto = (/Vi sua mensagem no grupo sobre (.+?)\. Quer que eu abra/.exec(convite.data?.[0]?.texto || '') || [])[1] || '';
+  if (!assunto && !original) return BOTOES.abrir_chamado_grupo;
+  return `Sim, quero abrir um chamado sobre ${assunto || 'o que eu falei no grupo'}.${original ? ` O que eu escrevi no grupo: "${original.replace(/^\[áudio\] /, '').slice(0, 500)}"` : ''} (é só sobre isso, não sobre outros assuntos desta conversa)`;
+}
+
 async function lerConteudo(tel, { texto, midia, ids, tipoMensagem, nomeArquivo, botao }) {
   if (botao) {
+    if (/^abrir_chamado_grupo(:\d+)?$/.test(botao)) return pedidoDeChamadoDoGrupo(tel, botao);
     if (BOTOES[botao]) return BOTOES[botao];
     if (/^cad_[a-z0-9_-]+$/.test(botao)) return `[[${botao}]]`; // botões do autocadastro
     if (/^cond_[0-9a-f-]{36}$/.test(botao)) return `[[${botao}]]`; // escolha do condomínio
@@ -782,7 +820,7 @@ async function receberMensagemPrivada(ev) {
 // ================== Grupo: chamar no privado quem relata um problema ==================
 // O assistente não responde no grupo. Se um morador cadastrado relatar um problema do prédio,
 // ele recebe uma mensagem no privado oferecendo abrir o chamado (no máximo uma vez a cada 24h).
-async function avaliarMensagemDoGrupo(morador, texto) {
+async function avaliarMensagemDoGrupo(morador, texto, grupoMsgId = null) {
   if (!morador || !morador.ativo || String(texto).length < 12) return;
   // Não insiste: o mesmo assunto não é oferecido de novo em 24h, e no máximo 3 convites por dia.
   // Um problema diferente (ex.: elevador de manhã, portão da piscina à tarde) recebe o seu convite.
@@ -807,7 +845,7 @@ async function avaliarMensagemDoGrupo(morador, texto) {
 
   await db.from('moradores').update({ abordado_grupo_em: new Date().toISOString() }).eq('id', morador.id);
   await sv.enviarBotoes(morador.telefone, `Oi, ${primeiroNome(morador.nome)}! Vi sua mensagem no grupo sobre ${r.resumo}. Quer que eu abra um chamado para a equipe resolver? Se quiser, pode mandar uma foto ou um áudio.`,
-    ['🔧 Abrir chamado|abrir_chamado_grupo', 'Não precisa|nao_precisa'], { planoB: 'É só responder aqui.', moradorId: morador.id });
+    [`🔧 Abrir chamado|abrir_chamado_grupo${grupoMsgId ? `:${grupoMsgId}` : ''}`, 'Não precisa|nao_precisa'], { planoB: 'É só responder aqui.', moradorId: morador.id });
 }
 
-module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, transcreverAudio, _teste: { montarParteFixa, FERRAMENTAS, responder } };
+module.exports = { receberMensagemPrivada, avaliarMensagemDoGrupo, transcreverAudio, _teste: { montarParteFixa, FERRAMENTAS, responder, executar, chamadoParecido, pedidoDeChamadoDoGrupo } };

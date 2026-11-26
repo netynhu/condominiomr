@@ -60,20 +60,20 @@ function jaRecebida(id) {
   return false;
 }
 
-// Grava a mensagem do grupo. Devolve false se ela já estava gravada (entrega repetida em outro processo).
+// Grava a mensagem do grupo e devolve o id dela. Devolve null se ela já estava gravada (entrega repetida em outro processo).
 async function gravarMensagemDoGrupo(linha) {
-  const r = await db.from('grupo_mensagens').insert(linha);
-  if (!r.error) return true;
-  if (r.error.code === '23505') return false; // mesma mensagem: já tratada
+  const r = await db.from('grupo_mensagens').insert(linha).select('id').single();
+  if (!r.error) return r.data.id;
+  if (r.error.code === '23505') return null; // mesma mensagem: já tratada
   // Banco ainda sem a coluna wa_id (migração 016 não rodou): grava sem ela
   if (/wa_id/.test(r.error.message)) {
     const { wa_id: _, ...resto } = linha;
-    const r2 = await db.from('grupo_mensagens').insert(resto);
+    const r2 = await db.from('grupo_mensagens').insert(resto).select('id').single();
     if (r2.error) console.error('[grupo]', r2.error.message);
-    return !r2.error;
+    return r2.error ? null : r2.data.id;
   }
   console.error('[grupo]', r.error.message);
-  return false;
+  return null;
 }
 
 async function tratarWebhook(body) {
@@ -116,9 +116,10 @@ async function tratarWebhook(body) {
           texto = `[áudio] ${texto}`;
         }
         // O banco garante que a mesma mensagem não seja gravada (nem tratada) duas vezes
-        if (!(await gravarMensagemDoGrupo({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: texto.slice(0, 4000), wa_id: ev.waId || null }))) return;
+        const grupoMsgId = await gravarMensagemDoGrupo({ telefone: ev.telefone || null, nome: morador?.nome || ev.nome || null, morador_id: morador?.id || null, texto: texto.slice(0, 4000), wa_id: ev.waId || null });
+        if (!grupoMsgId) return;
         // O assistente nunca responde no grupo. Se ligado, chama no privado quem relatou um problema.
-        if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, texto.replace(/^\[áudio\] /, ''));
+        if (cfg.grupo_chamar_privado === '1' && morador) await agente.avaliarMensagemDoGrupo(morador, texto.replace(/^\[áudio\] /, ''), grupoMsgId);
       });
     }
     return;
