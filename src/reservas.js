@@ -8,6 +8,7 @@ const sv = require('./servicos');
 const { dataExtenso, dataHora, primeiroNome, agoraBR } = require('./util');
 
 const ETAPA = { entrada: 'check-in', saida: 'check-out' };
+const ANTECEDENCIA_CHECKIN_MS = 2 * 3600000; // o link do check-in sai 2h antes do início
 const linkDa = (r, etapa) => `${env.APP_URL}/r/${r.token}/${etapa}`;
 
 // Hora curta: "18:00"
@@ -28,8 +29,13 @@ async function criar({ espacoId, moradorId, inicio, fim, observacao, por }) {
   if (res.morador?.ativo) {
     const cfg = await getConfig();
     await sv.enviar(res.morador.telefone,
-      `📅 Olá, ${primeiroNome(res.morador.nome)}! Sua reserva do *${res.espaco.nome}* está confirmada para ${dataExtenso(res.inicio)}, até as ${hora(res.fim)}.\n\nNo horário de início, eu mando aqui o link do *check-in*: uma lista rápida para conferir como o espaço está. No fim, mando o do *check-out*. Isso protege você e o condomínio.${res.observacao ? `\n\nObservação da administração: ${res.observacao}` : ''}\n\n_${cfg.nome_predio} · Administração_`,
+      `📅 Olá, ${primeiroNome(res.morador.nome)}! Sua reserva do *${res.espaco.nome}* está confirmada para ${dataExtenso(res.inicio)}, até as ${hora(res.fim)}.\n\nDuas horas antes do início, eu mando aqui o link do *check-in*: uma lista rápida para conferir como o espaço está. No fim, mando o do *check-out*. Isso protege você e o condomínio.${res.observacao ? `\n\nObservação da administração: ${res.observacao}` : ''}\n\n_${cfg.nome_predio} · Administração_`,
       res.morador.id);
+    // Reserva que começa em menos de 2h: o link do check-in já vai junto
+    if (new Date(res.inicio).getTime() - Date.now() <= ANTECEDENCIA_CHECKIN_MS) {
+      await enviarLink(res, 'entrada');
+      ok(await db.from('reservas').update({ entrada_link_em: new Date().toISOString() }).eq('id', res.id));
+    }
   }
   return res;
 }
@@ -46,10 +52,12 @@ async function cancelar(id, por) {
 async function enviarLink(r, etapa, { lembrete = false } = {}) {
   if (!r.morador?.ativo) return false;
   const nome = primeiroNome(r.morador.nome);
+  const comecou = new Date(r.inicio) <= new Date();
+  const quando = comecou ? 'já começou' : `começa às ${hora(r.inicio)}`;
   const texto = etapa === 'entrada'
     ? (lembrete
-      ? `⏰ ${nome}, você ainda não fez o check-in do ${r.espaco.nome}. Leva 1 minuto e protege você se algo já estiver com problema.`
-      : `🔑 ${nome}, sua reserva do ${r.espaco.nome} começou. Antes de usar, faça o *check-in*: confira os itens e tire as fotos pedidas. Se algo já estiver com problema, é só marcar.`)
+      ? `⏰ ${nome}, você ainda não fez o check-in do ${r.espaco.nome} (sua reserva ${quando}). Leva 1 minuto e protege você se algo já estiver com problema.`
+      : `🔑 ${nome}, sua reserva do ${r.espaco.nome} ${quando}. Antes de usar, faça o *check-in*: confira os itens e tire as fotos pedidas. Se algo já estiver com problema, é só marcar.`)
     : (lembrete
       ? `⏰ ${nome}, falta o check-out do ${r.espaco.nome}. Sem ele, a administração não consegue confirmar que o espaço foi entregue em ordem.`
       : `✅ ${nome}, sua reserva do ${r.espaco.nome} terminou. Faça o *check-out*: confira os mesmos itens e tire as fotos pedidas.`);
@@ -96,16 +104,21 @@ async function avisarAdministracao(texto) {
 async function acompanhar() {
   const agora = Date.now();
   const minutos = (iso) => (agora - new Date(iso).getTime()) / 60000;
+  // Pega também as que começam nas próximas 2h (o link do check-in sai 2h antes)
   const ativas = ok(await db.from('reservas').select('*, espaco:espacos(nome, itens), morador:moradores(id, nome, telefone, ativo)')
-    .in('status', ['agendada', 'em_uso']).lte('inicio', new Date(agora).toISOString()).order('inicio').limit(100));
+    .in('status', ['agendada', 'em_uso']).lte('inicio', new Date(agora + ANTECEDENCIA_CHECKIN_MS).toISOString()).order('inicio').limit(100));
   const { hora: h } = agoraBR();
   for (const r of ativas) {
     const set = (patch) => db.from('reservas').update(patch).eq('id', r.id).then(ok);
-    // Check-in: link no início; lembrete 30 min depois; administração avisada depois de 1h sem check-in
+    // Check-in: link 2h antes do início; lembrete a cada 1h até o início e mais um quando começa;
+    // administração avisada depois de 1h do início sem check-in
     if (!r.entrada_em && minutos(r.fim) < 0) {
+      const ultimo = r.entrada_lembrete_em || r.entrada_link_em;
+      const antesDoInicio = minutos(r.inicio) < 0;
       if (!r.entrada_link_em) { await enviarLink(r, 'entrada'); await set({ entrada_link_em: new Date().toISOString() }); }
-      else if (!r.entrada_lembrete_em && minutos(r.entrada_link_em) >= 30) { await enviarLink(r, 'entrada', { lembrete: true }); await set({ entrada_lembrete_em: new Date().toISOString() }); }
-      else if (!r.administracao_avisada_em && r.entrada_lembrete_em && minutos(r.entrada_link_em) >= 60) {
+      else if (antesDoInicio && minutos(ultimo) >= 60) { await enviarLink(r, 'entrada', { lembrete: true }); await set({ entrada_lembrete_em: new Date().toISOString() }); }
+      else if (!antesDoInicio && new Date(ultimo) < new Date(r.inicio) && minutos(ultimo) >= 15) { await enviarLink(r, 'entrada', { lembrete: true }); await set({ entrada_lembrete_em: new Date().toISOString() }); }
+      else if (!r.administracao_avisada_em && !antesDoInicio && minutos(r.inicio) >= 60) {
         await avisarAdministracao(`⏰ ${r.morador?.nome || 'O morador'} não fez o check-in do ${r.espaco.nome} (reserva das ${hora(r.inicio)}). Sem o check-in, não há registro de como o espaço foi entregue.`);
         await set({ administracao_avisada_em: new Date().toISOString() });
       }

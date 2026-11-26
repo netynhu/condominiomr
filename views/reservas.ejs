@@ -4,7 +4,7 @@
    const hora = (iso) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
    const linha = (x) => `${x.morador ? x.morador.nome + ' · ' + u.rotuloUnidade(x.morador.unidade) : 'morador removido'}`; %>
 <div class="cabeca">
-  <div><h1>Reservas</h1><p class="muted">Cadastre a reserva feita com a administração. O morador recebe a confirmação na hora, o link do check-in no início e o do check-out no fim. Se algo piorar, você é avisado com as fotos de antes e depois.</p></div>
+  <div><h1>Reservas</h1><p class="muted">Cadastre a reserva feita com a administração. O morador recebe a confirmação na hora, o link do check-in 2h antes do início (com lembrete a cada hora) e o do check-out no fim. Se algo piorar, você é avisado com as fotos de antes e depois.</p></div>
   <a class="btn sec" href="/espacos">Espaços e checklists</a>
 </div>
 
@@ -44,7 +44,25 @@
       <p class="muted">Primeiro cadastre os espaços e os checklists em <a href="/espacos">Espaços e checklists</a>.</p>
     <% } else { %>
       <label>Espaço<select name="espaco_id" required><% for (const e of espacos) { %><option value="<%= e.id %>"><%= e.nome %></option><% } %></select></label>
-      <label>Morador<select name="morador_id" required><option value="">Escolha</option><% for (const m of moradores) { %><option value="<%= m.id %>"><%= u.rotuloUnidade(m.unidade) %> · <%= m.nome %></option><% } %></select></label>
+      <label>Morador
+        <input type="search" id="busca-morador" placeholder="Buscar por nome, sobrenome ou apartamento (ex.: 302, Silva)" autocomplete="off">
+        <select name="morador_id" id="morador_id" required><option value="">Escolha</option><% for (const m of moradores) { %><option value="<%= m.id %>" data-busca="<%= [m.nome, u.rotuloUnidade(m.unidade), m.unidade ? `${m.unidade.bloco || ''}${m.unidade.numero || ''} ${m.unidade.numero || ''}${m.unidade.bloco || ''}` : ''].join(' ') %>"><%= u.rotuloUnidade(m.unidade) %> · <%= m.nome %></option><% } %></select>
+      </label>
+      <script>
+        (function () {
+          var busca = document.getElementById('busca-morador'), sel = document.getElementById('morador_id');
+          var normal = function (s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); };
+          var todas = Array.prototype.slice.call(sel.options, 1).map(function (o) { return { value: o.value, text: o.text, busca: normal(o.getAttribute('data-busca') + ' ' + o.text) }; });
+          busca.addEventListener('input', function () {
+            var palavras = normal(busca.value).split(/\s+/).filter(Boolean);
+            var achadas = todas.filter(function (m) { return palavras.every(function (p) { return m.busca.indexOf(p) >= 0; }); });
+            sel.innerHTML = '';
+            sel.add(new Option(achadas.length ? (palavras.length ? achadas.length + ' encontrado(s): escolha' : 'Escolha') : 'Nenhum morador encontrado', ''));
+            achadas.forEach(function (m) { sel.add(new Option(m.text, m.value)); });
+            if (achadas.length === 1) sel.value = achadas[0].value;
+          });
+        })();
+      </script>
       <label>Data<input type="date" name="data" required></label>
       <div class="linha-campos">
         <label>Início<input type="time" name="hora_inicio" required value="18:00"></label>

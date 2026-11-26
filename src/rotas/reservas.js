@@ -59,7 +59,7 @@ router.post('/reservas', admin, a(async (req, res) => {
   if (new Date(fim) <= new Date(inicio)) fim = new Date(new Date(fim).getTime() + 86400000).toISOString();
   try {
     const r = await rs.criar({ espacoId, moradorId, inicio, fim, observacao, por: req.session.usuario.nome });
-    avisar(req, `Reserva do ${r.espaco.nome} cadastrada. ${r.morador?.nome || 'O morador'} recebeu a confirmação no WhatsApp e vai receber o link do check-in no início.`);
+    avisar(req, `Reserva do ${r.espaco.nome} cadastrada. ${r.morador?.nome || 'O morador'} recebeu a confirmação no WhatsApp e vai receber o link do check-in 2h antes do início.`);
   } catch (e) { avisar(req, e.message, 'erro'); }
   res.redirect('/reservas');
 }));
