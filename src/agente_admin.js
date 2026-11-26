@@ -9,10 +9,21 @@ const { variantesTelefone, normalizarTelefone, dataExtenso, dataHora, localParaI
 
 const HISTORICO = 20;
 
+// Quem da equipe pode dar comandos pelo WhatsApp: o número precisa estar cadastrado na Equipe do condomínio.
+// Cada perfil só usa as ferramentas dele (o síndico e a administração usam todas).
+const PERFIS_COM_COMANDOS = ['admin', 'sindico', 'portaria', 'zelador'];
+const PERMITIDAS = {
+  portaria: ['preparar_aviso', 'enviar_aviso_confirmado', 'registrar_encomenda', 'listar_encomendas', 'entregar_encomenda', 'abrir_chamado', 'consultar_agenda', 'trocar_condominio'],
+  zelador: ['registrar_encomenda', 'listar_encomendas', 'entregar_encomenda', 'listar_chamados', 'atualizar_chamado', 'abrir_chamado', 'registrar_manutencao', 'consultar_agenda', 'trocar_condominio'],
+};
+const podeUsar = (pessoa, ferramenta) => !PERMITIDAS[pessoa?.perfil] || PERMITIDAS[pessoa.perfil].includes(ferramenta);
+const PAPEL = { admin: 'da administração', sindico: 'o síndico', portaria: 'da portaria', zelador: 'da manutenção (zeladoria)' };
+const ROTULO = { admin: 'você, da administração', sindico: 'você, como síndico', portaria: 'você, da portaria', zelador: 'você, da manutenção' };
+
 async function acharAdmin(telefone) {
   const vars = variantesTelefone(telefone);
   if (!vars[0]) return null;
-  const [u] = ok(await dbGlobal.from('usuarios').select('id, nome, perfil, telefone, dono, condominio_atual').in('telefone', vars).eq('ativo', true).in('perfil', ['admin', 'sindico']).limit(1));
+  const [u] = ok(await dbGlobal.from('usuarios').select('id, nome, perfil, telefone, dono, condominio_atual').in('telefone', vars).eq('ativo', true).in('perfil', PERFIS_COM_COMANDOS).limit(1));
   if (!u) return null;
   // Em qual condomínio ele está trabalhando: o escolhido por último, ou o primeiro da lista
   u.condominios = await sv.condominiosDoUsuario(u);
@@ -136,6 +147,31 @@ const FERRAMENTAS = [
     },
   },
   {
+    name: 'registrar_encomenda',
+    description: 'Registra uma encomenda que chegou para um apartamento. Os moradores do apartamento são avisados na hora pelo WhatsApp (com a foto, se houver) e cobrados até retirarem. Ex.: "encomenda para 305 Julia" + foto.',
+    parameters: {
+      type: 'object',
+      properties: {
+        apartamento: { type: 'string', description: 'Número do apartamento, ex.: "305"' },
+        bloco: { type: 'string', description: 'Bloco/torre, se o prédio tiver' },
+        para: { type: 'string', description: 'Nome de quem vai receber, se disseram (ex.: "Julia")' },
+        observacao: { type: 'string', description: 'Detalhe útil, ex.: "Mercado Livre, caixa grande"' },
+        com_foto: { type: 'boolean', description: 'true quando mandaram a foto da encomenda (aparece como "[o morador enviou uma foto...]")' },
+      },
+      required: ['apartamento'],
+    },
+  },
+  {
+    name: 'listar_encomendas',
+    description: 'Lista as encomendas que ainda esperam retirada (todas ou de um apartamento).',
+    parameters: { type: 'object', properties: { apartamento: { type: 'string' }, bloco: { type: 'string' } } },
+  },
+  {
+    name: 'entregar_encomenda',
+    description: 'Marca uma encomenda como entregue/retirada (para de cobrar o morador). Use o número da lista de encomendas.',
+    parameters: { type: 'object', properties: { numero: { type: 'integer' } }, required: ['numero'] },
+  },
+  {
     name: 'trocar_condominio',
     description: 'Troca o condomínio em que você está trabalhando com o síndico (quando ele administra mais de um). Use quando ele pedir para falar de outro prédio.',
     parameters: { type: 'object', properties: { nome: { type: 'string', description: 'Nome (ou parte do nome) do condomínio' } }, required: ['nome'] },
@@ -156,9 +192,54 @@ async function unidadeId(bloco, numero) {
   return ok(await db.from('unidades').insert({ bloco, numero }).select('id').single()).id;
 }
 
+// Apartamento do prédio: o que já está no cadastro ou, se ainda não tem ninguém, um da lista
+// "Apartamentos do prédio" (Configurações). Número fora da lista não vale (evita erro de digitação).
+async function acharUnidade(bloco, numero) {
+  numero = String(numero || '').replace(/\D/g, '');
+  if (!numero) return null;
+  let q = db.from('unidades').select('id, bloco, numero').eq('numero', String(Number(numero)));
+  if (String(bloco || '').trim()) q = q.eq('bloco', String(bloco).trim().toUpperCase());
+  const lista = ok(await q.limit(5));
+  if (lista.length) return lista.length === 1 ? lista[0] : { varios: lista };
+  const { lerUnidadesValidas, lerApartamento } = require('./autocadastro');
+  const validas = lerUnidadesValidas((await getConfig()).unidades_validas);
+  if (!validas.length) return null;
+  const a = lerApartamento(`${bloco || ''} ${numero}`, validas);
+  if (!a || a.invalido) return null;
+  if (a.faltaBloco) return { varios: a.blocos.map((b) => ({ bloco: b })) };
+  return { id: await sv.unidadeId(a.bloco, a.numero), bloco: a.bloco, numero: a.numero };
+}
+
 async function executar(nome, args, ctx) {
   const { admin } = ctx;
+  if (!podeUsar(admin, nome)) return { ok: false, erro: 'Esse pedido não é liberado para o seu perfil. Fale com o síndico ou a administração.' };
   switch (nome) {
+    case 'registrar_encomenda': {
+      const un = await acharUnidade(args.bloco, args.apartamento);
+      if (!un) return { ok: false, erro: `Não encontrei o apartamento ${args.apartamento}${args.bloco ? ` do bloco ${args.bloco}` : ''} no cadastro. Confira o número.` };
+      if (un.varios) return { ok: false, erro: `Existe o ${args.apartamento} em mais de um bloco (${un.varios.map((u) => u.bloco).join(', ')}). Pergunte qual é o bloco.` };
+      if (args.com_foto && !ctx.foto) return { ok: false, erro: 'Não recebi a foto. Peça para mandar a foto de novo, junto com o apartamento.' };
+      const foto = args.com_foto ? ctx.foto : null;
+      if (foto) ctx.limparMidia?.();
+      const observacao = [args.para && `Para ${String(args.para).trim()}`, args.observacao && String(args.observacao).trim()].filter(Boolean).join(' · ');
+      const r = await require('./encomendas').registrar({ unidadeId: un.id, observacao, foto, por: `${admin.nome} (WhatsApp)` });
+      return { ok: true, numero: r.encomenda.id, apartamento: `${un.bloco ? `${un.bloco}/` : ''}${un.numero}`, com_foto: Boolean(foto), moradores_avisados: r.avisados,
+        aviso: r.moradores ? undefined : 'Nenhum morador desse apartamento está cadastrado: ninguém foi avisado. A encomenda ficou registrada.' };
+    }
+    case 'listar_encomendas': {
+      let q = db.from('encomendas').select('id, observacao, recebida_em, unidade:unidades(bloco, numero)').eq('status', 'aguardando').order('recebida_em').limit(30);
+      if (args.apartamento) {
+        const un = await acharUnidade(args.bloco, args.apartamento);
+        if (!un || un.varios) return { ok: false, erro: 'Apartamento não encontrado (ou falta o bloco).' };
+        q = q.eq('unidade_id', un.id);
+      }
+      const l = ok(await q);
+      return l.length ? l.map((e) => ({ numero: e.id, apartamento: `${e.unidade?.bloco ? `${e.unidade.bloco}/` : ''}${e.unidade?.numero || '?'}`, detalhe: e.observacao || undefined, chegou: dataHora(e.recebida_em) })) : { nenhuma: true };
+    }
+    case 'entregar_encomenda': {
+      const r = await require('./encomendas').retirar(Number(args.numero), { por: `${admin.nome} (WhatsApp)` });
+      return { ok: r.ok, ja_estava_entregue: Boolean(r.jaFeito), erro: r.ok ? undefined : r.msg };
+    }
     case 'preparar_aviso': {
       const canal = args.canal === 'privado' ? 'privado' : 'grupo';
       const publico = canal === 'privado' && args.bloco ? `bloco:${String(args.bloco).trim().toUpperCase()}` : 'todos';
@@ -271,7 +352,11 @@ async function executar(nome, args, ctx) {
 
 async function sistema(admin, canal = 'whatsapp') {
   const cfg = await getConfig();
-  return `Você é o assistente da administração do ${cfg.nome_predio}. Quem fala com você é ${admin.nome}, da administração (síndico/gestão), não um morador.
+  const restrito = PERMITIDAS[admin.perfil];
+  const quem = PAPEL[admin.perfil] || 'da administração';
+  return `Você é o assistente da equipe do ${cfg.nome_predio}. Quem fala com você é ${admin.nome}, ${quem}, não um morador.
+${restrito ? `Pelo WhatsApp, ${admin.nome} só pode: ${admin.perfil === 'portaria' ? 'registrar e entregar encomendas, preparar avisos para o grupo (com prévia e confirmação), abrir chamados e consultar a agenda' : 'registrar e entregar encomendas, ver e atualizar chamados, abrir chamados, registrar manutenções feitas e consultar a agenda'}. Outros pedidos: explique com educação que é com o síndico ou a administração.` : ''}
+- ENCOMENDAS: "encomenda para 305 Julia" com foto = registrar_encomenda (apartamento 305, para Julia, com_foto=true se veio foto). Registre direto, sem pedir confirmação, e responda em uma linha: número da encomenda, apartamento e quantos moradores foram avisados. Se faltar o apartamento, pergunte só isso. Se vier só a foto sem apartamento, pergunte o apartamento.
 Hoje: ${hojeParaIA()}. Use isso para entender "amanhã", "terça", "dia 25" (sempre a próxima ocorrência a partir de hoje, no ano certo). Ao confirmar, escreva a data por extenso com o dia da semana.
 Condomínio em que você está trabalhando agora: ${cfg.nome_predio}.${(admin.condominios || []).length > 1 ? ` ${admin.nome} administra: ${admin.condominios.map((c) => c.nome).join(', ')}. Se ele pedir algo de outro prédio, use trocar_condominio e peça para repetir o pedido.` : ''}
 Grupo dos moradores configurado: ${cfg.grupo_nome || 'nenhum'}.
@@ -299,7 +384,8 @@ async function responderAdmin(admin, canal, texto, ctx = { admin }) {
     { role: 'user', content: texto },
   ];
   const SO_NO_PAINEL = ['cadastrar_morador'];
-  const tools = FERRAMENTAS.filter((f) => (ctx.canal === 'painel' ? f.name !== 'trocar_condominio' : !SO_NO_PAINEL.includes(f.name))).map((f) => ({ type: 'function', function: f }));
+  const tools = FERRAMENTAS.filter((f) => (ctx.canal === 'painel' ? f.name !== 'trocar_condominio' : !SO_NO_PAINEL.includes(f.name)))
+    .filter((f) => podeUsar(admin, f.name)).map((f) => ({ type: 'function', function: f }));
   for (let volta = 0; volta < 8; volta++) {
     const r = await openai().chat.completions.create({ model: env.OPENAI_MODEL, messages: mensagens, tools, temperature: 0.2 });
     const msg = r.choices[0].message;
@@ -329,8 +415,8 @@ async function atenderAdminWhatsApp(admin, tel, texto, midia = {}) {
   if (!resposta) return;
   // Aviso preparado: botões para confirmar ou ajustar (plano B: responder sim)
   if (ctx.avisoPreparado) {
-    await sv.enviarBotoes(tel, resposta, ['✅ Pode enviar|confirmar_aviso', '✏️ Quero ajustar|ajustar_aviso'], { planoB: 'Responda "sim" para enviar ou diga o que ajustar.', rotulo: 'você, como síndico' });
-  } else await sv.enviar(tel, resposta, null, 'você, como síndico');
+    await sv.enviarBotoes(tel, resposta, ['✅ Pode enviar|confirmar_aviso', '✏️ Quero ajustar|ajustar_aviso'], { planoB: 'Responda "sim" para enviar ou diga o que ajustar.', rotulo: ROTULO[admin.perfil] || 'você, como síndico' });
+  } else await sv.enviar(tel, resposta, null, ROTULO[admin.perfil] || 'você, como síndico');
 }
 
 // Mensagem da administração pela tela "Assistente" do painel
@@ -346,4 +432,4 @@ async function historicoPainel(usuarioId) {
   return ok(await db.from('mensagens').select('direcao, texto, criado_em').eq('telefone', `painel-${usuarioId}`).order('criado_em', { ascending: false }).limit(40)).reverse();
 }
 
-module.exports = { acharAdmin, atenderAdminWhatsApp, atenderAdminPainel, historicoPainel, _teste: { FERRAMENTAS, sistema } };
+module.exports = { acharAdmin, atenderAdminWhatsApp, atenderAdminPainel, historicoPainel, _teste: { FERRAMENTAS, sistema, executar, podeUsar } };
