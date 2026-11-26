@@ -28,6 +28,8 @@
   .parte>form{padding:0 16px 16px;display:flex;flex-direction:column;gap:12px}
   .linha-rep{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
   .ajuda{background:var(--sunk);border-radius:10px;padding:10px 12px;font-size:.85rem;color:var(--ink-2)}
+  .barra-importacao{height:8px;border-radius:99px;background:var(--sunk);overflow:hidden}
+  .barra-importacao span{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
 </style>
 </head>
 <body>
@@ -45,16 +47,27 @@
   <% } else if (salvo) { %><div class="flash" role="status">Parte salva. <%= aberta ? 'Siga para a próxima.' : '' %></div><% } %>
 
   <% const parte = (id, n, conteudo) => { const p = partes.find((x) => x.id === id); return `<details class="parte ${feitas.includes(id) ? 'feita' : ''}" id="${id}" ${aberta === id || (!aberta && !feitas.length && n === 1) ? 'open' : ''}><summary><span class="num">${feitas.includes(id) ? '✓' : n}</span>${p.titulo}</summary><form method="post" action="/ficha/${token}/${id}">${conteudo}<button class="btn" type="submit">Salvar e continuar</button></form></details>`; };
+     const sugerido = (k, sk) => { const atual = cfg[k]; const ajustado = atual && atual !== (PADRAO[k] || ''); return ajustado ? atual : (sug[sk || k] || atual || ''); };
+     const veioDaLeitura = (k, sk) => { const atual = cfg[k]; return !(atual && atual !== (PADRAO[k] || '')) && Boolean(sug[sk || k]); };
+     const marca = (k, sk) => veioDaLeitura(k, sk) ? ' <span class="tag aberto">lido do documento: confira</span>' : '';
+     const temSug = Object.keys(sug || {}).length > 0;
+     const contradicoes = (sug && sug.contradicoes) || [];
      const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); %>
 
   <%- parte('predio', 1, `
     <label>Nome do condomínio<input name="nome_predio" value="${esc(cfg.nome_predio)}" required></label>
-    <label>Endereço<input name="endereco" value="${esc(cfg.endereco)}" placeholder="Rua, número, bairro, cidade"></label>
-    <label>Apartamentos do prédio<textarea name="unidades_validas" rows="3" placeholder="Ex.: 101-110, 201-210, 301-310&#10;Com blocos: A/101-104, B/101-104">${esc(cfg.unidades_validas)}</textarea></label>
+    <label>Endereço${marca('endereco')}<input name="endereco" value="${esc(sugerido('endereco'))}" placeholder="Rua, número, bairro, cidade"></label>
+    <label>Apartamentos do prédio${marca('unidades_validas', 'unidades')}<textarea name="unidades_validas" rows="3" placeholder="Ex.: 101-110, 201-210, 301-310&#10;Com blocos: A/101-104, B/101-104">${esc(sugerido('unidades_validas', 'unidades'))}</textarea></label>
     <p class="ajuda">Use faixas separadas por vírgula, do primeiro ao último apartamento de cada andar. O assistente só aceita cadastro de moradores nesses apartamentos.</p>`) %>
 
   <%- parte('documentos', 2, `
-    <p class="ajuda">O assistente responde às dúvidas dos moradores com base na <b>convenção</b> e no <b>regulamento interno</b>. Pode ser PDF escaneado.</p>
+    <p class="ajuda">O assistente responde às dúvidas dos moradores com base na <b>convenção</b> e no <b>regulamento interno</b>. Envie em arquivo <b>.md</b> (Markdown): o sistema lê e já sugere horários, regras e possíveis contradições nas próximas partes.</p>
+    <div class="campos" style="gap:8px">
+      <label class="btn sec" style="align-self:flex-start;cursor:pointer"><input type="file" id="arquivo-md" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>📄 Escolher o arquivo .md da convenção / regulamento</label>
+      <div id="importacao-status" class="small muted" role="status"></div>
+      <div class="barra-importacao" hidden><span></span></div>
+    </div>
+    <p class="small muted" style="margin:0">Se a convenção e o regulamento forem arquivos separados, envie um de cada vez. Ou, se preferir:</p>
     <label>Link dos documentos (Google Drive, Dropbox, OneDrive...)<input name="doc_link" value="${esc(cfg.ficha_doc_link)}" placeholder="https://..."></label>
     <label class="check"><input type="checkbox" name="doc_por_email" ${cfg.ficha_doc_por_email === '1' ? 'checked' : ''}> Vou enviar os documentos por e-mail ou WhatsApp</label>`) %>
 
@@ -79,18 +92,23 @@
     <div class="linha-campos"><label>E-mail<input type="email" name="adm_email" value="${esc(cfg.adm_email)}"></label><label>Horário<input name="adm_horario" value="${esc(cfg.adm_horario)}"></label></div>`) %>
 
   <%- parte('horarios', 5, `
-    <p class="ajuda">Escreva como o morador entenderia, com dias e horas. Se a convenção e o regulamento disserem coisas diferentes, escreva o que vale hoje.</p>
-    <label>Obras, reformas e serviços nos apartamentos<input name="horario_obras" value="${esc(cfg.horario_obras)}"></label>
-    <label>Mudanças<input name="horario_mudancas" value="${esc(cfg.horario_mudancas)}"></label>
-    <label>Horário de silêncio<input name="horario_silencio" value="${esc(cfg.horario_silencio)}"></label>`) %>
+    <p class="ajuda">Escreva como o morador entenderia, com dias e horas.${temSug ? ' Os campos marcados foram lidos do documento: confira e corrija se mudou.' : ''}</p>
+    <label>Obras, reformas e serviços nos apartamentos${marca('horario_obras')}<input name="horario_obras" value="${esc(sugerido('horario_obras'))}"></label>
+    <label>Mudanças${marca('horario_mudancas')}<input name="horario_mudancas" value="${esc(sugerido('horario_mudancas'))}"></label>
+    <label>Horário de silêncio${marca('horario_silencio')}<input name="horario_silencio" value="${esc(sugerido('horario_silencio'))}"></label>
+    ${contradicoes.length ? `<div class="alerta" style="flex-direction:column;align-items:stretch;gap:10px"><b>O documento se contradiz em ${contradicoes.length} ponto(s). O que vale hoje?</b>${contradicoes.map((c) => `
+      <div class="linha-rep" style="background:var(--surface)"><b>${esc(c.assunto)}</b>
+        <div class="small">Convenção: ${esc(c.convencao)}</div><div class="small">Regulamento: ${esc(c.regulamento)}</div>
+        <input type="hidden" name="contra_assunto" value="${esc(c.assunto)}">
+        <label>O que vale hoje<input name="contra_resposta" placeholder="Ex.: vale o regulamento, das 8h às 17h"></label></div>`).join('')}</div>` : ''}`) %>
 
   <%- parte('dia_a_dia', 6, `
     <p class="ajuda">São as dúvidas mais comuns dos moradores. Deixe em branco o que não se aplica.</p>
-    <label>Lixo: onde e quando descartar<textarea name="regra_lixo" rows="2" placeholder="Ex.: a qualquer hora, no térreo, na área do estacionamento; a equipe leva para a rua">${esc(cfg.regra_lixo)}</textarea></label>
-    <label>Encomendas: quem recebe, onde ficam, fora do horário<textarea name="regra_encomendas" rows="2" placeholder="Ex.: a portaria recebe das 8h às 17h; depois disso, ficam na recepção">${esc(cfg.regra_encomendas)}</textarea></label>
-    <label>Reservas (salão, churrasqueira...): como e com quanto tempo de antecedência<textarea name="regra_reservas" rows="2" placeholder="Ex.: pelo aplicativo, com 5 dias de antecedência">${esc(cfg.regra_reservas)}</textarea></label>
-    <label>Piscina, academia e áreas de lazer: horários e regras<textarea name="regra_lazer" rows="2">${esc(cfg.regra_lazer)}</textarea></label>
-    <label>Outras regras importantes<textarea name="regra_outros" rows="2" placeholder="Ex.: pets, bicicletas, visitantes, entregadores, vagas de garagem">${esc(cfg.regra_outros)}</textarea></label>`) %>
+    <label>Lixo: onde e quando descartar${marca('regra_lixo')}<textarea name="regra_lixo" rows="2" placeholder="Ex.: a qualquer hora, no térreo, na área do estacionamento; a equipe leva para a rua">${esc(sugerido('regra_lixo'))}</textarea></label>
+    <label>Encomendas: quem recebe, onde ficam, fora do horário${marca('regra_encomendas')}<textarea name="regra_encomendas" rows="2" placeholder="Ex.: a portaria recebe das 8h às 17h; depois disso, ficam na recepção">${esc(sugerido('regra_encomendas'))}</textarea></label>
+    <label>Reservas (salão, churrasqueira...): como e com quanto tempo de antecedência${marca('regra_reservas')}<textarea name="regra_reservas" rows="2" placeholder="Ex.: pelo aplicativo, com 5 dias de antecedência">${esc(sugerido('regra_reservas'))}</textarea></label>
+    <label>Piscina, academia e áreas de lazer: horários e regras${marca('regra_lazer')}<textarea name="regra_lazer" rows="2">${esc(sugerido('regra_lazer'))}</textarea></label>
+    <label>Outras regras importantes${marca('regra_outros')}<textarea name="regra_outros" rows="2" placeholder="Ex.: pets, bicicletas, visitantes, entregadores, vagas de garagem">${esc(sugerido('regra_outros'))}</textarea></label>`) %>
 
   <%- parte('manutencoes', 7, `
     <p class="ajuda">Assim o assistente responde perguntas como "quando foi a última limpeza da caixa d'água?" e avisa quando a próxima estiver chegando. Preencha as que souber.</p>
@@ -125,8 +143,20 @@
     <form method="post" action="/ficha/<%= token %>/concluir"><button class="btn" type="submit">Enviar ficha para a implantação</button></form>
   </div>
 </main>
+<script src="/static/importar-md.js?v=1"></script>
 <script>
-// "+ Pessoa / + Manutenção / + Espaço": copia a última linha, vazia
+// Arquivo .md da convenção: envia e recarrega a ficha com as sugestões
+document.getElementById('arquivo-md')?.addEventListener('change', async (e) => {
+  const arquivo = e.target.files[0]; if (!arquivo) return;
+  const st = document.getElementById('importacao-status'); const barra = document.querySelector('.barra-importacao');
+  barra.hidden = false;
+  try {
+    await importarMd({ arquivo, base: location.pathname.replace(/\/$/, ''), aoProgresso: (t, p) => { st.textContent = t; barra.firstElementChild.style.width = p + '%'; } });
+    st.textContent = 'Pronto! Recarregando a ficha com o que foi lido...';
+    location.href = location.pathname + '?salvo=documentos&parte=predio#predio';
+  } catch (err) { st.textContent = err.message; }
+});
+// "+ Pessoa / + Manutenção / + Espaço\": copia a última linha, vazia
 document.querySelectorAll('[data-mais]').forEach((b) => b.addEventListener('click', () => {
   const box = document.getElementById(b.dataset.mais);
   const nova = box.lastElementChild.cloneNode(true);

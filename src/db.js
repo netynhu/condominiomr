@@ -16,7 +16,7 @@ const cliente = createClient(env.SUPABASE_URL || 'http://localhost', env.SUPABAS
 // (ex.: achar de qual prédio é um telefone), use "dbGlobal".
 const { condominioAtual } = require('./contexto');
 const DO_CONDOMINIO = new Set(['unidades', 'moradores', 'mensagens', 'chamados', 'reclamacoes', 'eventos', 'lembretes', 'avisos',
-  'fila_envio', 'documentos', 'manutencoes', 'grupo_mensagens', 'config', 'duvidas', 'contatos_pendentes', 'encomendas', 'espacos', 'reservas', 'manutencao_registros']);
+  'fila_envio', 'documentos', 'manutencoes', 'grupo_mensagens', 'config', 'duvidas', 'contatos_pendentes', 'encomendas', 'espacos', 'reservas', 'manutencao_registros', 'importacoes']);
 // Podem ser gravadas sem condomínio (ex.: mensagem de quem ainda está se cadastrando)
 const SEM_CONDOMINIO_PERMITIDO = new Set(['mensagens', 'contatos_pendentes']);
 

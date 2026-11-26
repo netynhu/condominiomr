@@ -75,9 +75,20 @@ async function salvarParte(parte, b) {
         adm_whatsapp: t(b.adm_whatsapp), adm_telefone: t(b.adm_telefone), adm_email: t(b.adm_email), adm_horario: t(b.adm_horario),
       });
       break;
-    case 'horarios':
+    case 'horarios': {
       await setConfig({ horario_obras: t(b.horario_obras), horario_mudancas: t(b.horario_mudancas), horario_silencio: t(b.horario_silencio) });
+      // Contradições entre convenção e regulamento: a resposta da administração vira instrução para o assistente
+      const assuntos = lista(b.contra_assunto); const respostas = lista(b.contra_resposta);
+      const decisoes = assuntos.map((a, i) => [t(a), t(respostas[i])]).filter(([a, r]) => a && r);
+      if (decisoes.length) {
+        const cfg = await getConfig();
+        const prefixo = (a) => `Decisão da administração sobre ${a}:`;
+        let linhas = String(cfg.instrucoes_extras || '').split('\n').filter((l) => l.trim() && !decisoes.some(([a]) => l.startsWith(prefixo(a))));
+        linhas = linhas.concat(decisoes.map(([a, r]) => `${prefixo(a)} ${r} (isso vale sobre o que diz a convenção ou o regulamento).`));
+        await setConfig({ instrucoes_extras: linhas.join('\n'), ficha_contradicoes: JSON.stringify(decisoes) });
+      }
       break;
+    }
     case 'dia_a_dia':
       await setConfig({ regra_lixo: t(b.regra_lixo), regra_encomendas: t(b.regra_encomendas), regra_reservas: t(b.regra_reservas), regra_lazer: t(b.regra_lazer), regra_outros: t(b.regra_outros) });
       break;

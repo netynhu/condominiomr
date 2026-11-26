@@ -15,6 +15,7 @@ const env = {
   WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
   OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+  OPENAI_MODEL_FORTE: process.env.OPENAI_MODEL_FORTE || 'gpt-4.1', // tarefas raras e difíceis (ex.: achar contradições na convenção)
   OPENAI_TRANSCRIBE_MODEL: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
   ENVIO_INTERVALO_MIN: num(process.env.ENVIO_INTERVALO_MIN, 25),
   ENVIO_INTERVALO_MAX: num(process.env.ENVIO_INTERVALO_MAX, 60),

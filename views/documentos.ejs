@@ -4,6 +4,16 @@
   <div><h1>Documentos do prédio</h1><p class="muted">O assistente responde às dúvidas dos moradores só com base nestes textos. Cole o regimento interno, a convenção, regras de mudança, horários, contatos úteis e decisões de assembleia.</p></div>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+  <div class="acoes" style="justify-content:space-between;align-items:center">
+    <div><h2>Importar arquivo .md (convenção, regulamento)</h2>
+      <p class="small muted" style="margin:0">Envie o texto da convenção ou do regulamento em Markdown. O sistema cria o documento abaixo e aponta possíveis contradições. As sugestões de horários e regras aparecem na ficha de implantação.</p></div>
+    <label class="btn" style="cursor:pointer"><input type="file" id="arquivo-md" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>📄 Escolher arquivo .md</label>
+  </div>
+  <div id="importacao-status" class="small muted" role="status"></div>
+  <div class="barra-importacao" hidden style="height:8px;border-radius:99px;background:var(--sunk);overflow:hidden"><span style="display:block;height:100%;width:0;background:var(--accent);transition:width .3s"></span></div>
+</div>
+
 <div class="grade2">
   <form class="card campos" method="post" action="/documentos">
     <h2><%= editar ? 'Editar documento' : 'Novo documento' %></h2>
@@ -12,7 +22,7 @@
     <label>Conteúdo (texto completo)<textarea name="conteudo" id="conteudo" style="min-height:360px" required><%= e.conteudo || '' %></textarea></label>
     <% if (editar) { %><label class="check"><input type="checkbox" name="ativo" id="ativo" <%= e.ativo ? 'checked' : '' %>> Em uso pelo assistente</label><% } %>
     <div class="acoes"><button class="btn" type="submit">Salvar</button><% if (editar) { %><a class="btn sec" href="/documentos">Cancelar</a><% } %></div>
-    <p class="small muted">Dica: para PDF, abra o arquivo, selecione tudo, copie e cole aqui. Mantenha a numeração dos artigos para o assistente poder citá-los.</p>
+    <p class="small muted">Dica: se tiver o arquivo .md, use o botão "Escolher arquivo .md" acima. Mantenha a numeração dos artigos para o assistente poder citá-los.</p>
   </form>
 
   <div class="card">
@@ -31,4 +41,17 @@
     </div>
   </div>
 </div>
+<script src="/static/importar-md.js?v=1"></script>
+<script>
+document.getElementById('arquivo-md').addEventListener('change', async (e) => {
+  const arquivo = e.target.files[0]; if (!arquivo) return;
+  const st = document.getElementById('importacao-status'); const barra = document.querySelector('.barra-importacao');
+  barra.hidden = false;
+  try {
+    const r = await importarMd({ arquivo, base: '/documentos', aoProgresso: (t, p) => { st.textContent = t; barra.firstElementChild.style.width = p + '%'; } });
+    st.textContent = `Pronto! documento criado${r.contradicoes ? `, ${r.contradicoes} contradição(ões) para resolver na ficha de implantação` : ''}.`;
+    setTimeout(() => location.reload(), 2500);
+  } catch (err) { st.textContent = err.message; }
+});
+</script>
 <%- include('partials/rodape') %>
